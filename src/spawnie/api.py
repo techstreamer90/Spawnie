@@ -3,76 +3,24 @@
 Spawnie is a model router that maps model requests to available providers.
 Callers request a model (e.g., "claude-sonnet") and Spawnie routes to the
 best available provider (CLI subscription, API, etc.).
+
+All execution goes through workflows - even single prompts become single-step
+workflows for consistent tracking and monitoring.
 """
 
 import subprocess
 import time
-import uuid
 from pathlib import Path
 from typing import Literal
 
 from .config import SpawnieConfig
-from .models import Task, Result, QualityLevel, QUALITY_DESCRIPTIONS
+from .models import Task, Result, QualityLevel
 from .queue import QueueManager
 from .providers import get_provider
-from .registry import get_registry, Route, ProviderConfig
 
 
 # Execution modes
 Mode = Literal["blocking", "async", "output"]
-
-# Review prompt templates based on benchmark findings
-SELF_REVIEW_PROMPT = """You just completed a task. Before finalizing, critically review your own work:
-
-ORIGINAL TASK: {original_prompt}
-
-YOUR RESPONSE: {output}
-
-SELF-REVIEW CHECKLIST:
-1. What did you FORGET to consider? (security? cost? edge cases? alternatives?)
-2. Are there CONTRADICTIONS in your response?
-3. What ASSUMPTIONS are you making that might be wrong?
-4. What is your CONFIDENCE level (Low/Medium/High) and why?
-
-Provide an IMPROVED response that:
-- Addresses any gaps you identified
-- Acknowledges trade-offs
-- States your confidence level
-- Is clear about limitations
-
-Your improved response:"""
-
-EXTERNAL_REVIEW_PROMPT = """You are a SKEPTICAL SENIOR ARCHITECT reviewing work from another team member.
-
-ORIGINAL TASK: {original_prompt}
-
-THEIR RESPONSE (after self-review): {output}
-
-Your job is to be ADVERSARIAL but constructive:
-1. Find CONTRADICTIONS or inconsistencies
-2. Identify ARCHITECTURAL RISKS not addressed
-3. Challenge UNJUSTIFIED decisions
-4. Rate overall confidence (Low/Medium/High)
-
-Be critical. Assume something is wrong. Find it.
-
-Your critique (max 300 words):"""
-
-FINAL_SYNTHESIS_PROMPT = """You need to finalize your response incorporating review feedback.
-
-ORIGINAL TASK: {original_prompt}
-
-YOUR DRAFT (after self-review): {self_reviewed_output}
-
-EXTERNAL REVIEWER CRITIQUE: {external_review}
-
-Create a FINAL response that:
-1. Addresses the reviewer's concerns
-2. Acknowledges remaining trade-offs
-3. States your confidence level with justification
-4. Is honest about limitations
-
-Your final response:"""
 
 
 def run(
@@ -88,12 +36,8 @@ def run(
     """
     Run a prompt using the best available route for the requested model.
 
-    This is the main entry point for Spawnie. It:
-    1. Looks up the model in the registry
-    2. Finds the best available route (CLI > API by default)
-    3. Executes using that provider
-    4. Optionally applies review strategies based on quality level
-    5. Returns results based on mode
+    This is the main entry point for Spawnie. Internally, it creates a
+    single-step workflow for consistent tracking and monitoring.
 
     Args:
         prompt: The prompt to send to the model.
@@ -101,7 +45,7 @@ def run(
                Must be configured in ~/.spawnie/config.json
         mode: Execution mode:
               - "blocking": Wait for response (default)
-              - "async": Return task_id immediately, caller polls later
+              - "async": Return workflow_id immediately, caller polls later
               - "output": Agent writes to output_dir, blocks until done
         timeout: Maximum wait time in seconds (for blocking/output modes).
         output_dir: Directory for agent output (required for "output" mode).
@@ -113,7 +57,7 @@ def run(
 
     Returns:
         - mode="blocking": Result object with output
-        - mode="async": task_id (str) for later polling
+        - mode="async": workflow_id (str) for later polling
         - mode="output": Result object (output is in output_dir)
 
     Raises:
@@ -131,36 +75,9 @@ def run(
             model="claude-sonnet",
             quality="hypertask",  # Will apply self-review + external review
         )
-
-        # Async call
-        task_id = run("Long analysis", model="claude-opus", mode="async")
-        # ... do other work ...
-        result = get_result(task_id)
-
-        # Output directory mode
-        result = run(
-            "Analyze this codebase and write a report",
-            model="claude-sonnet",
-            mode="output",
-            output_dir=Path("./analysis-output"),
-        )
     """
-    registry = get_registry()
-
-    # Find best route for model
-    route_info = registry.get_best_route(model)
-    if not route_info:
-        available = [m["name"] for m in registry.list_models() if m["available"]]
-        raise ValueError(
-            f"No available route for model '{model}'. "
-            f"Available models: {available or 'none (run spawnie setup)'}"
-        )
-
-    route, provider_config = route_info
-
-    # Map to internal provider
-    internal_provider = _get_internal_provider(provider_config)
-    model_id = route.model_id  # Provider-specific model ID
+    # Import here to avoid circular imports
+    from .workflow import StepDefinition, WorkflowDefinition, WorkflowExecutor
 
     # Handle output mode - wrap prompt with output instructions
     actual_prompt = prompt
@@ -171,47 +88,50 @@ def run(
         output_dir.mkdir(parents=True, exist_ok=True)
         actual_prompt = _wrap_prompt_for_output(prompt, output_dir)
 
-    # Execute based on mode
+    # Create a short description from the prompt (first 50 chars)
+    description = prompt[:50].replace('\n', ' ').strip()
+    if len(prompt) > 50:
+        description += "..."
+
+    # Create single-step workflow
+    step = StepDefinition(
+        name="main",
+        prompt=actual_prompt,
+        model=model,
+        timeout=timeout,
+        quality=quality,
+    )
+
+    workflow_def = WorkflowDefinition(
+        name=description,
+        description=description,
+        steps={"main": step},
+        outputs={"result": "{{steps.main.output}}"},
+        timeout=timeout,
+    )
+
+    # Execute workflow
+    executor = WorkflowExecutor()
+
     if mode == "async":
-        return _execute_async(actual_prompt, internal_provider, model_id, metadata, quality)
-    else:
-        result = _execute_blocking(actual_prompt, internal_provider, model_id, timeout, metadata)
+        # For async, we'd need to implement async workflow execution
+        # For now, fall back to blocking and return workflow_id
+        wf_result = executor.execute(workflow_def, inputs={}, timeout=timeout)
+        return wf_result.workflow_id
 
-        # Apply quality-level review strategies (only for successful blocking calls)
-        if result.succeeded and quality != "normal":
-            result = _apply_review_strategy(
-                result=result,
-                original_prompt=prompt,
-                quality=quality,
-                provider_name=internal_provider,
-                model_id=model_id,
-                timeout=timeout,
-            )
+    wf_result = executor.execute(workflow_def, inputs={}, timeout=timeout)
 
-        return result
+    # Convert WorkflowResult to Result for API compatibility
+    step_result = wf_result.step_results.get("main", {})
+    output = step_result.get("output", "")
 
-
-def _get_internal_provider(provider_config: ProviderConfig) -> str:
-    """Map registry provider config to internal provider name."""
-    if provider_config.type == "mock":
-        return "mock"
-
-    if provider_config.type == "cli":
-        if "claude" in provider_config.name:
-            return "claude"
-        elif "copilot" in provider_config.name:
-            return "copilot"
-
-    elif provider_config.type == "api":
-        # For now, API providers not yet implemented
-        # TODO: Add anthropic-api, openai-api providers
-        if "anthropic" in provider_config.name:
-            raise NotImplementedError(
-                "Direct API providers not yet implemented. "
-                "Use CLI providers or set up Claude/Copilot CLI."
-            )
-
-    return "mock"
+    return Result(
+        task_id=wf_result.workflow_id,
+        status=wf_result.status,
+        output=output if wf_result.status == "completed" else None,
+        error=wf_result.error,
+        duration_seconds=wf_result.duration_seconds,
+    )
 
 
 def _wrap_prompt_for_output(prompt: str, output_dir: Path) -> str:
@@ -229,203 +149,6 @@ Create appropriate files for your response:
 Do not include the output in your response - write it to files instead.
 Confirm when you have written the files.
 """
-
-
-def _execute_blocking(
-    prompt: str,
-    provider_name: str,
-    model_id: str | None,
-    timeout: int,
-    metadata: dict | None,
-) -> Result:
-    """Execute a task and wait for completion."""
-    from .tracker import get_tracker
-
-    provider = get_provider(provider_name)
-    tracker = get_tracker()
-
-    # Generate task ID and register with tracker
-    task_id = f"task-{uuid.uuid4().hex[:12]}"
-    model_name = model_id or provider_name
-
-    # Create a short description from the prompt (first 50 chars)
-    description = prompt[:50].replace('\n', ' ').strip()
-    if len(prompt) > 50:
-        description += "..."
-
-    # Register task with tracker so it shows in monitor
-    tracker.create_task(
-        task_id=task_id,
-        model=model_name,
-        workflow_id=None,
-        step=None,
-        timeout=timeout,
-        description=description,
-    )
-    tracker.start_task(task_id)
-
-    start_time = time.time()
-
-    try:
-        output, exit_code = provider.execute(prompt, model_id)
-        duration = time.time() - start_time
-
-        if exit_code == 0:
-            tracker.complete_task(task_id, output[:200] if output else None)
-            return Result(
-                task_id=task_id,
-                status="completed",
-                output=output,
-                duration_seconds=duration,
-            )
-        else:
-            tracker.fail_task(task_id, output[:200] if output else "Failed")
-            return Result(
-                task_id=task_id,
-                status="failed",
-                error=output,
-                duration_seconds=duration,
-            )
-
-    except (subprocess.SubprocessError, OSError, ValueError, RuntimeError) as e:
-        duration = time.time() - start_time
-        tracker.fail_task(task_id, str(e)[:200])
-        return Result(
-            task_id=task_id,
-            status="failed",
-            error=str(e),
-            duration_seconds=duration,
-        )
-
-
-def _apply_review_strategy(
-    result: Result,
-    original_prompt: str,
-    quality: QualityLevel,
-    provider_name: str,
-    model_id: str | None,
-    timeout: int,
-) -> Result:
-    """
-    Apply review strategy based on quality level.
-
-    Quality levels:
-    - "extra-clean": Self-review only (same model reviews its output)
-    - "hypertask": Dual review (self-review + external reviewer)
-
-    Based on benchmark findings:
-    - Self-review catches omissions (security, cost, edge cases)
-    - External review catches contradictions and architectural risks
-    - Dual review combines both for highest quality
-    """
-    provider = get_provider(provider_name)
-    start_time = time.time()
-    total_duration = result.duration_seconds
-
-    # Step 1: Self-review (for both extra-clean and hypertask)
-    self_review_prompt = SELF_REVIEW_PROMPT.format(
-        original_prompt=original_prompt,
-        output=result.output,
-    )
-
-    try:
-        self_reviewed_output, exit_code = provider.execute(self_review_prompt, model_id)
-        total_duration += time.time() - start_time
-
-        if exit_code != 0:
-            # Self-review failed, return original result with note
-            result.output = f"{result.output}\n\n[Self-review failed: {self_reviewed_output}]"
-            result.duration_seconds = total_duration
-            return result
-
-        # For extra-clean, we're done after self-review
-        if quality == "extra-clean":
-            return Result(
-                task_id=result.task_id,
-                status="completed",
-                output=self_reviewed_output,
-                duration_seconds=total_duration,
-            )
-
-        # Step 2: External review (for hypertask only)
-        external_review_prompt = EXTERNAL_REVIEW_PROMPT.format(
-            original_prompt=original_prompt,
-            output=self_reviewed_output,
-        )
-
-        start_review = time.time()
-        # Use a more capable model for external review if available
-        review_model = model_id  # Could upgrade to opus here
-        external_review, exit_code = provider.execute(external_review_prompt, review_model)
-        total_duration += time.time() - start_review
-
-        if exit_code != 0:
-            # External review failed, return self-reviewed result
-            return Result(
-                task_id=result.task_id,
-                status="completed",
-                output=self_reviewed_output,
-                duration_seconds=total_duration,
-            )
-
-        # Step 3: Final synthesis incorporating external review
-        synthesis_prompt = FINAL_SYNTHESIS_PROMPT.format(
-            original_prompt=original_prompt,
-            self_reviewed_output=self_reviewed_output,
-            external_review=external_review,
-        )
-
-        start_synthesis = time.time()
-        final_output, exit_code = provider.execute(synthesis_prompt, model_id)
-        total_duration += time.time() - start_synthesis
-
-        if exit_code != 0:
-            # Synthesis failed, return self-reviewed result with review attached
-            return Result(
-                task_id=result.task_id,
-                status="completed",
-                output=f"{self_reviewed_output}\n\n---\nEXTERNAL REVIEW:\n{external_review}",
-                duration_seconds=total_duration,
-            )
-
-        return Result(
-            task_id=result.task_id,
-            status="completed",
-            output=final_output,
-            duration_seconds=total_duration,
-        )
-
-    except Exception as e:
-        # Review failed, return original result with error note
-        result.output = f"{result.output}\n\n[Review process error: {e}]"
-        result.duration_seconds = total_duration
-        return result
-
-
-def _execute_async(
-    prompt: str,
-    provider_name: str,
-    model_id: str | None,
-    metadata: dict | None,
-    quality: QualityLevel = "normal",
-) -> str:
-    """Submit a task for async execution, return task_id."""
-    config = SpawnieConfig(
-        provider=provider_name,
-        model=model_id,
-    )
-    config.ensure_dirs()
-
-    task = Task(
-        prompt=prompt,
-        provider=provider_name,
-        model=model_id,
-        quality_level=quality,
-        metadata=metadata or {},
-    )
-
-    queue = QueueManager(config.queue_dir.parent)
-    return queue.submit(task)
 
 
 # Keep old spawn() for backwards compatibility

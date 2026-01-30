@@ -30,6 +30,7 @@ class TaskState:
     status: str  # "queued" | "running" | "completed" | "failed" | "timeout" | "killed"
     created_at: datetime
     description: str | None = None  # Human-readable task description
+    parent_task_id: str | None = None  # Parent task ID for hierarchical display
     started_at: datetime | None = None
     completed_at: datetime | None = None
     timeout_at: datetime | None = None
@@ -45,6 +46,7 @@ class TaskState:
             "model": self.model,
             "status": self.status,
             "description": self.description,
+            "parent_task_id": self.parent_task_id,
             "created_at": self.created_at.isoformat(),
             "started_at": self.started_at.isoformat() if self.started_at else None,
             "completed_at": self.completed_at.isoformat() if self.completed_at else None,
@@ -63,6 +65,7 @@ class TaskState:
             model=data["model"],
             status=data["status"],
             description=data.get("description"),
+            parent_task_id=data.get("parent_task_id"),
             created_at=datetime.fromisoformat(data["created_at"]),
             started_at=datetime.fromisoformat(data["started_at"]) if data.get("started_at") else None,
             completed_at=datetime.fromisoformat(data["completed_at"]) if data.get("completed_at") else None,
@@ -207,6 +210,23 @@ class Tracker:
     by external tools. Handles timeouts and provides safety limits.
     """
 
+    @staticmethod
+    def _default_stats() -> dict:
+        """Return default stats structure."""
+        return {
+            # Counts
+            "completed_today": 0,
+            "failed_today": 0,
+            # Runtime
+            "total_runtime_seconds": 0.0,
+            "avg_duration_seconds": 0.0,
+            # Model usage
+            "model_usage": {},  # {"claude-haiku": 5, "claude-sonnet": 3}
+            # Session info
+            "session_start": datetime.now().isoformat(),
+            "last_activity": None,
+        }
+
     def __init__(
         self,
         tracker_path: Path | None = None,
@@ -220,10 +240,7 @@ class Tracker:
         self.workflows: dict[str, WorkflowState] = {}
         self.tasks: dict[str, TaskState] = {}
         self.alerts: list[dict] = []
-        self.stats = {
-            "completed_today": 0,
-            "failed_today": 0,
-        }
+        self.stats = self._default_stats()
 
         self._lock = threading.RLock()
         self._monitor_thread: threading.Thread | None = None
@@ -253,7 +270,12 @@ class Tracker:
                     k: TaskState.from_dict(v)
                     for k, v in data.get("tasks", {}).items()
                 }
-                self.stats = data.get("stats", self.stats)
+                # Merge loaded stats with defaults (for backwards compatibility)
+                loaded_stats = data.get("stats", {})
+                self.stats = {**self._default_stats(), **loaded_stats}
+                # Ensure model_usage is a dict (could be missing in old files)
+                if not isinstance(self.stats.get("model_usage"), dict):
+                    self.stats["model_usage"] = {}
                 self.alerts = data.get("alerts", [])
 
                 # Clean up completed/failed items from previous runs (only on initial load)
@@ -271,7 +293,10 @@ class Tracker:
             self._load(cleanup=False)
 
     def _cleanup_finished(self):
-        """Move finished workflows/tasks from previous sessions to history."""
+        """Move finished workflows/tasks from previous sessions to history.
+
+        Also detects orphaned tasks where the process is no longer running.
+        """
         finished_statuses = {"completed", "failed", "timeout", "killed"}
 
         # Clean finished workflows
@@ -280,10 +305,38 @@ class Tracker:
                 self._archive_workflow(wf)
                 del self.workflows[wf_id]
 
-        # Clean orphaned tasks (workflow finished but task still here)
+        # Clean finished or orphaned tasks
         for task_id, task in list(self.tasks.items()):
             if task.status in finished_statuses:
+                self._archive_task(task)
                 del self.tasks[task_id]
+            # Check for orphaned running tasks (process dead)
+            elif task.status == "running" and task.pid:
+                if not self._is_process_alive(task.pid):
+                    task.status = "failed"
+                    task.error = f"Process {task.pid} no longer running (orphaned on startup)"
+                    task.completed_at = datetime.now()
+                    self._archive_task(task)
+                    del self.tasks[task_id]
+                    logger.warning("Cleaned orphaned task %s (PID %s dead)", task_id, task.pid)
+
+        # Clean orphaned workflows (all tasks dead)
+        for wf_id, wf in list(self.workflows.items()):
+            if wf.status == "running":
+                # Check if any step has a running task that's still alive
+                has_alive_task = False
+                for step in wf.steps.values():
+                    if step.task_id and step.task_id in self.tasks:
+                        has_alive_task = True
+                        break
+
+                if not has_alive_task and wf.current_step:
+                    wf.status = "failed"
+                    wf.error = "All tasks orphaned on startup"
+                    wf.completed_at = datetime.now()
+                    self._archive_workflow(wf)
+                    del self.workflows[wf_id]
+                    logger.warning("Cleaned orphaned workflow %s", wf_id)
             elif task.workflow_id and task.workflow_id not in self.workflows:
                 del self.tasks[task_id]
 
@@ -314,7 +367,10 @@ class Tracker:
             f.write(json.dumps(record) + "\n")
 
     def save(self):
-        """Save current state to tracker file."""
+        """Save current state to tracker file with retry for Windows file locking."""
+        import tempfile
+        import random
+
         with self._lock:
             data = {
                 "updated_at": datetime.now().isoformat(),
@@ -331,26 +387,37 @@ class Tracker:
                 "alerts": self.alerts[-10:],  # Keep last 10 alerts
             }
 
-            # Atomic write using unique temp file (prevents race conditions)
-            import tempfile
-            fd, tmp_path = tempfile.mkstemp(
-                suffix=".tmp",
-                prefix="tracker_",
-                dir=self.tracker_path.parent,
-            )
-            try:
-                with os.fdopen(fd, "w", encoding="utf-8") as f:
-                    json.dump(data, f, indent=2)
-                Path(tmp_path).replace(self.tracker_path)
-            except Exception:
-                # Clean up temp file on failure
-                try:
-                    os.unlink(tmp_path)
-                except OSError:
-                    pass
-                raise
+            # Retry logic for Windows file locking issues
+            max_retries = 5
+            last_error = None
 
-            self._last_save = datetime.now()
+            for attempt in range(max_retries):
+                fd, tmp_path = tempfile.mkstemp(
+                    suffix=".tmp",
+                    prefix="tracker_",
+                    dir=self.tracker_path.parent,
+                )
+                try:
+                    with os.fdopen(fd, "w", encoding="utf-8") as f:
+                        json.dump(data, f, indent=2)
+                    Path(tmp_path).replace(self.tracker_path)
+                    self._last_save = datetime.now()
+                    return  # Success
+                except OSError as e:
+                    last_error = e
+                    # Clean up temp file on failure
+                    try:
+                        os.unlink(tmp_path)
+                    except OSError:
+                        pass
+                    # Exponential backoff with jitter
+                    if attempt < max_retries - 1:
+                        delay = (0.1 * (2 ** attempt)) + (random.random() * 0.1)
+                        time.sleep(delay)
+
+            # All retries failed
+            logger.warning("Failed to save tracker after %d attempts: %s", max_retries, last_error)
+            raise last_error
 
     def _add_alert(self, level: str, message: str):
         """Add an alert to the tracker."""
@@ -432,7 +499,17 @@ class Tracker:
             workflow.completed_at = datetime.now()
             workflow.outputs = outputs
 
+            # Calculate duration and update stats (model tracked at task level)
+            duration = 0.0
+            if workflow.started_at:
+                duration = (workflow.completed_at - workflow.started_at).total_seconds()
+
             self.stats["completed_today"] += 1
+            self.stats["total_runtime_seconds"] += duration
+            total = self.stats["completed_today"] + self.stats["failed_today"]
+            self.stats["avg_duration_seconds"] = round(self.stats["total_runtime_seconds"] / total, 2)
+            self.stats["last_activity"] = datetime.now().isoformat()
+
             self._archive_workflow(workflow)
             del self.workflows[workflow_id]
             self.save()
@@ -450,7 +527,18 @@ class Tracker:
             workflow.completed_at = datetime.now()
             workflow.error = error
 
+            # Calculate duration and update stats (model tracked at task level)
+            duration = 0.0
+            if workflow.started_at:
+                duration = (workflow.completed_at - workflow.started_at).total_seconds()
+
             self.stats["failed_today"] += 1
+            self.stats["total_runtime_seconds"] += duration
+            total = self.stats["completed_today"] + self.stats["failed_today"]
+            if total > 0:
+                self.stats["avg_duration_seconds"] = round(self.stats["total_runtime_seconds"] / total, 2)
+            self.stats["last_activity"] = datetime.now().isoformat()
+
             self._add_alert("error", f"Workflow {workflow_id} failed: {error}")
             self._archive_workflow(workflow)
             del self.workflows[workflow_id]
@@ -541,6 +629,7 @@ class Tracker:
         step: str | None = None,
         timeout: int | None = None,
         description: str | None = None,
+        parent_task_id: str | None = None,
     ) -> TaskState:
         """Create and register a new task."""
         with self._lock:
@@ -562,6 +651,7 @@ class Tracker:
                 model=model,
                 status="queued",
                 description=description,
+                parent_task_id=parent_task_id,
                 created_at=now,
                 timeout_at=now + timedelta(seconds=timeout_secs),
             )
@@ -593,9 +683,14 @@ class Tracker:
             task.completed_at = datetime.now()
             task.output_preview = output_preview[:200] if output_preview else None
 
+            # Track model usage (counts/runtime tracked at workflow level)
+            if task.model:
+                model_key = task.model.lower()
+                self.stats["model_usage"][model_key] = self.stats["model_usage"].get(model_key, 0) + 1
+            self.stats["last_activity"] = datetime.now().isoformat()
+
             # Archive to history before removing
             self._archive_task(task)
-            self.stats["completed_today"] = self.stats.get("completed_today", 0) + 1
 
             # Remove from active tracking
             del self.tasks[task_id]
@@ -612,9 +707,14 @@ class Tracker:
             task.completed_at = datetime.now()
             task.error = error
 
+            # Track model usage (counts/runtime tracked at workflow level)
+            if task.model:
+                model_key = task.model.lower()
+                self.stats["model_usage"][model_key] = self.stats["model_usage"].get(model_key, 0) + 1
+            self.stats["last_activity"] = datetime.now().isoformat()
+
             # Archive to history before removing
             self._archive_task(task)
-            self.stats["failed_today"] = self.stats.get("failed_today", 0) + 1
 
             self._add_alert("error", f"Task {task_id} failed: {error[:100]}")
             del self.tasks[task_id]
@@ -642,37 +742,79 @@ class Tracker:
     # Monitoring
     # -------------------------------------------------------------------------
 
+    def _is_process_alive(self, pid: int | None) -> bool:
+        """Check if a process with given PID is still running."""
+        if pid is None:
+            return False
+        try:
+            # On Windows and Unix, this checks if process exists
+            os.kill(pid, 0)
+            return True
+        except (OSError, ProcessLookupError):
+            return False
+
     def check_timeouts(self) -> list[str]:
-        """Check for timed-out tasks and workflows. Returns IDs of timed out items."""
-        timed_out = []
+        """Check for timed-out and orphaned tasks/workflows. Returns IDs of cleaned items."""
+        cleaned = []
         now = datetime.now()
 
         with self._lock:
             # Check workflows
             for wf_id, wf in list(self.workflows.items()):
-                if wf.status == "running" and wf.timeout_at and now > wf.timeout_at:
+                if wf.status != "running":
+                    continue
+
+                # Check timeout
+                if wf.timeout_at and now > wf.timeout_at:
                     wf.status = "timeout"
                     wf.completed_at = now
                     wf.error = "Workflow timed out"
                     self._add_alert("error", f"Workflow {wf_id} timed out")
                     self._archive_workflow(wf)
                     del self.workflows[wf_id]
-                    timed_out.append(wf_id)
+                    cleaned.append(wf_id)
 
             # Check tasks
             for task_id, task in list(self.tasks.items()):
-                if task.status == "running" and task.timeout_at and now > task.timeout_at:
-                    task.status = "timeout"
-                    task.completed_at = now
-                    task.error = "Task timed out"
-                    self._add_alert("error", f"Task {task_id} timed out")
-                    del self.tasks[task_id]
-                    timed_out.append(task_id)
+                if task.status != "running":
+                    continue
 
-            if timed_out:
+                should_clean = False
+                reason = None
+
+                # Check timeout
+                if task.timeout_at and now > task.timeout_at:
+                    should_clean = True
+                    reason = "Task timed out"
+                # Check if process is dead (orphan detection)
+                elif task.pid and not self._is_process_alive(task.pid):
+                    should_clean = True
+                    reason = f"Process {task.pid} no longer running (orphaned)"
+
+                if should_clean:
+                    task.status = "timeout" if "timed out" in reason else "failed"
+                    task.completed_at = now
+                    task.error = reason
+                    self._add_alert("warn", f"Task {task_id}: {reason}")
+                    self._archive_task(task)
+                    del self.tasks[task_id]
+                    cleaned.append(task_id)
+
+                    # Also clean parent workflow if task was orphaned
+                    if task.workflow_id and task.workflow_id in self.workflows:
+                        wf = self.workflows[task.workflow_id]
+                        if wf.status == "running":
+                            wf.status = "failed"
+                            wf.completed_at = now
+                            wf.error = f"Task {task_id} orphaned"
+                            self._archive_workflow(wf)
+                            del self.workflows[task.workflow_id]
+                            cleaned.append(task.workflow_id)
+
+            if cleaned:
                 self.save()
 
-        return timed_out
+        return cleaned
 
     def start_monitor(self, interval: float = 5.0):
         """Start background monitoring thread."""

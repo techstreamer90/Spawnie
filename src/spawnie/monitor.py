@@ -69,21 +69,46 @@ def render_workflows(workflows: list[WorkflowState]) -> str:
 
 
 def render_tasks(tasks: list[TaskState]) -> str:
-    """Render tasks to rich markup string."""
+    """Render tasks to rich markup string with hierarchical indentation."""
     if not tasks:
         return "[dim]No active tasks[/dim]"
 
-    lines = []
+    # Build task lookup and find children for each task
+    task_by_id = {t.id: t for t in tasks}
+    children_map: dict[str | None, list[TaskState]] = {None: []}
+
     for task in tasks:
+        parent_id = task.parent_task_id
+        # Only use parent if it exists in current task list
+        if parent_id and parent_id not in task_by_id:
+            parent_id = None
+        if parent_id not in children_map:
+            children_map[parent_id] = []
+        children_map[parent_id].append(task)
+
+    lines = []
+
+    def render_task(task: TaskState, depth: int = 0):
+        """Render a single task with proper indentation."""
+        indent = "   " + "  │  " * depth
         symbol = status_symbol(task.status)
+
         # Show description if available, otherwise fall back to ID
         if task.description:
-            desc = task.description[:50] + "..." if len(task.description) > 50 else task.description
-            lines.append(f"   {symbol} [bold]{task.model}[/bold] - {desc}")
-            lines.append(f"      ID: {task.id}  Status: {task.status}")
+            desc = task.description[:40] + "..." if len(task.description) > 40 else task.description
+            lines.append(f"{indent}{symbol} [bold]{task.model}[/bold] - {desc}")
+            lines.append(f"{indent}   ID: {task.id}  Status: {task.status}")
         else:
             wf_info = f"[{task.workflow_id}:{task.step}]" if task.workflow_id else ""
-            lines.append(f"   {symbol} {task.id:20} {task.model:15} {task.status:10} {wf_info}")
+            lines.append(f"{indent}{symbol} {task.id:20} {task.model:15} {task.status:10} {wf_info}")
+
+        # Render children
+        for child in children_map.get(task.id, []):
+            render_task(child, depth + 1)
+
+    # Start with root tasks (no parent)
+    for task in children_map.get(None, []):
+        render_task(task, 0)
 
     return "\n".join(lines)
 
@@ -94,11 +119,45 @@ def render_stats(status: dict) -> str:
     tasks = status.get("tasks", {})
     stats = status.get("stats", {})
 
-    return (
-        f"Workflows: {wf.get('running', 0)} running, {wf.get('queued', 0)} queued  |  "
-        f"Tasks: {tasks.get('running', 0)} running, {tasks.get('queued', 0)} queued  |  "
-        f"Today: {stats.get('completed_today', 0)} completed, {stats.get('failed_today', 0)} failed"
-    )
+    # Basic counts
+    completed = stats.get("completed_today", 0)
+    failed = stats.get("failed_today", 0)
+    total = completed + failed
+
+    # Success rate
+    success_rate = (completed / total * 100) if total > 0 else 0
+    rate_color = "green" if success_rate >= 90 else "yellow" if success_rate >= 70 else "red"
+
+    # Runtime
+    total_runtime = stats.get("total_runtime_seconds", 0)
+    avg_duration = stats.get("avg_duration_seconds", 0)
+
+    # Format runtime nicely
+    if total_runtime >= 3600:
+        runtime_str = f"{total_runtime/3600:.1f}h"
+    elif total_runtime >= 60:
+        runtime_str = f"{total_runtime/60:.1f}m"
+    else:
+        runtime_str = f"{total_runtime:.1f}s"
+
+    # Model usage
+    model_usage = stats.get("model_usage", {})
+    if model_usage:
+        model_parts = [f"{m}: {c}" for m, c in sorted(model_usage.items(), key=lambda x: -x[1])]
+        model_str = ", ".join(model_parts[:3])  # Top 3 models
+        if len(model_usage) > 3:
+            model_str += f" (+{len(model_usage)-3} more)"
+    else:
+        model_str = "none"
+
+    lines = [
+        f"[bold]Active:[/bold] {wf.get('running', 0)} workflows, {tasks.get('running', 0)} tasks",
+        f"[bold]Today:[/bold] {completed} completed, {failed} failed ([{rate_color}]{success_rate:.0f}%[/{rate_color}])",
+        f"[bold]Runtime:[/bold] {runtime_str} total, {avg_duration:.1f}s avg",
+        f"[bold]Models:[/bold] {model_str}",
+    ]
+
+    return "  |  ".join(lines)
 
 
 def render_alerts(alerts: list[dict]) -> str:

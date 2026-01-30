@@ -16,7 +16,7 @@ import logging
 from .tracker import get_tracker, WorkflowState
 from .registry import get_registry
 from .providers import get_provider
-from .api import SELF_REVIEW_PROMPT, EXTERNAL_REVIEW_PROMPT, FINAL_SYNTHESIS_PROMPT
+from .models import SELF_REVIEW_PROMPT, EXTERNAL_REVIEW_PROMPT, FINAL_SYNTHESIS_PROMPT
 
 logger = logging.getLogger("spawnie.workflow")
 
