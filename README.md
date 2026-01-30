@@ -2,6 +2,8 @@
 
 Model router and workflow orchestrator for CLI agents. Routes model requests to the best available provider (CLI subscriptions, API fallback) to minimize costs.
 
+**For Agents**: Spawnie lets you call LLMs without API keys by routing to CLI tools (Claude CLI, GitHub Copilot) that use existing subscriptions. Request a model like `claude-sonnet` and Spawnie finds an available provider automatically.
+
 ## Agent Quick Reference
 
 ```bash
@@ -125,14 +127,14 @@ print(result.step_results) # Per-step details
 ## Python API
 
 ```python
-from spawnie import run, list_models, execute
+from spawnie import run, list_models, execute, get_result, wait_for_result
 
 # List available models
 for model in list_models():
     if model["available"]:
         print(f"{model['name']} via {model['route']}")
 
-# Run a single prompt
+# Run a single prompt (blocking by default)
 result = run("Explain quantum computing", model="claude-sonnet")
 print(result.output)
 print(result.status)           # "completed" or "failed"
@@ -141,8 +143,52 @@ print(result.duration_seconds) # Execution time
 # Async mode - returns task ID immediately
 task_id = run("Long task", model="claude-opus", mode="async")
 
+# Poll for result (returns None if not ready)
+result = get_result(task_id)
+
+# Or wait with timeout
+result = wait_for_result(task_id, timeout=300)
+
 # Execute a workflow
 result = execute("workflow.json", inputs={"data": "..."})
+```
+
+### Error Handling
+
+```python
+result = run("prompt", model="claude-sonnet")
+
+if result.status == "completed":
+    print(result.output)
+elif result.status == "failed":
+    print(f"Error: {result.error}")
+elif result.status == "timeout":
+    print("Task timed out")
+
+# Result object fields:
+# - task_id: str
+# - status: "completed" | "failed" | "timeout"
+# - output: str | None (on success)
+# - error: str | None (on failure)
+# - duration_seconds: float
+# - completed_at: datetime | None
+```
+
+### Testing with Mock Provider
+
+Use the mock provider for testing without making real LLM calls:
+
+```python
+from spawnie import run
+from spawnie.registry import get_registry
+
+# Add a test model that uses mock provider
+registry = get_registry()
+registry.add_model("test-model", [{"provider": "mock", "priority": 1}])
+
+# Now use it
+result = run("test prompt", model="test-model")
+# Returns: "[Mock Response]\nPrompt received (11 chars)..."
 ```
 
 ## Real-time Monitoring
@@ -189,6 +235,30 @@ claude-haiku  → claude-cli (priority 1) → anthropic-api (priority 2)
 
 CLI subscriptions are preferred (no per-token cost). API is fallback.
 
+### Provider Availability
+
+```python
+from spawnie import detect_cli, list_models
+
+# Check specific CLI
+status = detect_cli("claude")
+print(status.installed)  # True/False
+print(status.version)    # Version string if installed
+
+# List all models with availability
+for m in list_models():
+    print(f"{m['name']}: available={m['available']}, route={m['route']}")
+```
+
+If no provider is available for a model, `run()` raises `ValueError` with available alternatives:
+
+```python
+try:
+    result = run("prompt", model="claude-sonnet")
+except ValueError as e:
+    print(e)  # "No available route for model 'claude-sonnet'. Available models: ['test-mock']"
+```
+
 ### Configuration
 
 Config lives at `~/.spawnie/config.json`:
@@ -206,9 +276,26 @@ Config lives at `~/.spawnie/config.json`:
         {"provider": "anthropic-api", "priority": 2}
       ]
     }
+  },
+  "preferences": {
+    "prefer_cli": true
   }
 }
 ```
+
+### Built-in Constants
+
+These values are defined in `spawnie.config`:
+
+| Constant | Value | Description |
+|----------|-------|-------------|
+| `CLAUDE_TIMEOUT` | 600s | Claude CLI execution timeout (10 min) |
+| `COPILOT_TIMEOUT` | 300s | Copilot CLI execution timeout (5 min) |
+| `DEFAULT_TIMEOUT` | 300s | Default for other providers |
+| `MAX_INLINE_PROMPT_LENGTH` | 7000 | Prompts longer than this use stdin |
+| `AVAILABILITY_CACHE_TTL` | 60s | How long provider availability is cached |
+
+Provider availability is checked and cached. If you install a CLI mid-session, it will be detected within 60 seconds.
 
 ## CLI Reference
 

@@ -122,8 +122,9 @@ class TestClaudeCLIProvider:
 
     def test_max_inline_prompt_length(self):
         """ClaudeCLIProvider has reasonable max prompt length."""
-        assert ClaudeCLIProvider.MAX_INLINE_PROMPT_LENGTH > 1000
-        assert ClaudeCLIProvider.MAX_INLINE_PROMPT_LENGTH < 8192
+        provider = ClaudeCLIProvider()
+        assert provider.max_inline_prompt_length > 1000
+        assert provider.max_inline_prompt_length < 8192
 
 
 class TestCopilotCLIProvider:

@@ -6,10 +6,14 @@ When a caller requests a model, Spawnie finds the best available route.
 
 import json
 import logging
+import os
+import tempfile
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from .config import AVAILABILITY_CACHE_TTL
 from .detection import detect_cli
 
 logger = logging.getLogger("spawnie.registry")
@@ -109,7 +113,8 @@ class ModelRegistry:
         self.models: dict[str, ModelConfig] = {}
         self.providers: dict[str, ProviderConfig] = {}
         self.preferences: dict[str, Any] = {}
-        self._availability_cache: dict[str, bool] = {}
+        # Cache stores (available: bool, timestamp: float) tuples
+        self._availability_cache: dict[str, tuple[bool, float]] = {}
 
         if self.config_path.exists():
             self.load()
@@ -200,7 +205,7 @@ class ModelRegistry:
                     self.config_path, len(self.models), len(self.providers))
 
     def save(self):
-        """Save registry to config file."""
+        """Save registry to config file using atomic write."""
         self.config_path.parent.mkdir(parents=True, exist_ok=True)
 
         data = {
@@ -209,19 +214,51 @@ class ModelRegistry:
             "preferences": self.preferences,
         }
 
-        with open(self.config_path, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2)
+        # Atomic write: write to temp file, then rename
+        fd, temp_path = tempfile.mkstemp(
+            suffix=".tmp",
+            dir=self.config_path.parent,
+        )
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2)
+            temp_file = Path(temp_path)
+            try:
+                temp_file.replace(self.config_path)
+            except OSError:
+                if self.config_path.exists():
+                    self.config_path.unlink()
+                temp_file.rename(self.config_path)
+        except Exception:
+            try:
+                os.unlink(temp_path)
+            except OSError:
+                pass
+            raise
 
         logger.info("Saved registry to %s", self.config_path)
 
-    def check_provider_available(self, provider_name: str) -> bool:
-        """Check if a provider is available."""
-        if provider_name in self._availability_cache:
-            return self._availability_cache[provider_name]
+    def check_provider_available(self, provider_name: str, force_refresh: bool = False) -> bool:
+        """Check if a provider is available.
+
+        Args:
+            provider_name: The provider to check.
+            force_refresh: If True, bypass cache and re-check availability.
+
+        Returns:
+            True if the provider is available.
+        """
+        now = time.time()
+
+        # Check cache (with TTL expiration)
+        if not force_refresh and provider_name in self._availability_cache:
+            available, cached_at = self._availability_cache[provider_name]
+            if now - cached_at < AVAILABILITY_CACHE_TTL:
+                return available
 
         provider = self.providers.get(provider_name)
         if not provider:
-            self._availability_cache[provider_name] = False
+            self._availability_cache[provider_name] = (False, now)
             return False
 
         available = False
@@ -243,11 +280,10 @@ class ModelRegistry:
 
         elif provider.type == "api":
             # Check for API key
-            import os
             if provider.api_key_env:
                 available = bool(os.environ.get(provider.api_key_env))
 
-        self._availability_cache[provider_name] = available
+        self._availability_cache[provider_name] = (available, now)
         return available
 
     def get_best_route(self, model_name: str) -> tuple[Route, ProviderConfig] | None:

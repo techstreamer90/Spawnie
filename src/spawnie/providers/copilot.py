@@ -2,16 +2,15 @@
 
 import shutil
 import subprocess
-import tempfile
-from pathlib import Path
 
+from ..config import COPILOT_TIMEOUT
 from .base import CLIProvider
 
 
 class CopilotCLIProvider(CLIProvider):
     """Provider for GitHub Copilot CLI."""
 
-    MAX_INLINE_PROMPT_LENGTH = 7000
+    timeout = COPILOT_TIMEOUT
 
     @property
     def name(self) -> str:
@@ -75,65 +74,5 @@ class CopilotCLIProvider(CLIProvider):
         if not cmd_base:
             return ("Copilot CLI not found", 1)
 
-        # Build command - gh copilot suggest or explain
         cmd = cmd_base + ["suggest", "-t", "shell"]
-
-        # Handle long prompts
-        if len(prompt) > self.MAX_INLINE_PROMPT_LENGTH:
-            return self._execute_with_stdin(cmd, prompt)
-        else:
-            return self._execute_inline(cmd, prompt)
-
-    def _execute_inline(self, cmd: list[str], prompt: str) -> tuple[str, int]:
-        """Execute with prompt as command argument."""
-        cmd.append(prompt)
-
-        try:
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=300,
-            )
-            output = result.stdout
-            if result.stderr:
-                output += f"\n[stderr]: {result.stderr}"
-            return (output, result.returncode)
-        except subprocess.TimeoutExpired:
-            return ("Command timed out", 124)
-        except OSError as e:
-            return (f"Failed to execute: {e}", 1)
-
-    def _execute_with_stdin(self, cmd: list[str], prompt: str) -> tuple[str, int]:
-        """Execute with prompt via stdin."""
-        with tempfile.NamedTemporaryFile(
-            mode="w",
-            suffix=".txt",
-            delete=False,
-            encoding="utf-8",
-        ) as f:
-            f.write(prompt)
-            temp_path = Path(f.name)
-
-        try:
-            with open(temp_path, "r", encoding="utf-8") as stdin_file:
-                result = subprocess.run(
-                    cmd,
-                    stdin=stdin_file,
-                    capture_output=True,
-                    text=True,
-                    timeout=300,
-                )
-            output = result.stdout
-            if result.stderr:
-                output += f"\n[stderr]: {result.stderr}"
-            return (output, result.returncode)
-        except subprocess.TimeoutExpired:
-            return ("Command timed out", 124)
-        except OSError as e:
-            return (f"Failed to execute: {e}", 1)
-        finally:
-            try:
-                temp_path.unlink()
-            except OSError:
-                pass
+        return self._execute_with_length_check(cmd, prompt)

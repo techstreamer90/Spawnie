@@ -5,6 +5,7 @@ Callers request a model (e.g., "claude-sonnet") and Spawnie routes to the
 best available provider (CLI subscription, API, etc.).
 """
 
+import subprocess
 import time
 import uuid
 from pathlib import Path
@@ -182,7 +183,7 @@ def _execute_blocking(
                 duration_seconds=duration,
             )
 
-    except Exception as e:
+    except (subprocess.SubprocessError, OSError, ValueError, RuntimeError) as e:
         duration = time.time() - start_time
         return Result(
             task_id=str(uuid.uuid4()),
@@ -297,7 +298,7 @@ def _process_and_wait_legacy(
                 else:
                     return queue.fail(task_id, output, duration)
 
-            except Exception as e:
+            except (subprocess.SubprocessError, OSError, ValueError, RuntimeError) as e:
                 duration = time.time() - start_time
                 return queue.fail(task_id, str(e), duration)
 

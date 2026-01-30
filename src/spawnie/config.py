@@ -5,6 +5,18 @@ from pathlib import Path
 from typing import Literal
 
 
+# Provider-specific timeouts (seconds)
+CLAUDE_TIMEOUT = 600  # 10 minutes
+COPILOT_TIMEOUT = 300  # 5 minutes
+DEFAULT_TIMEOUT = 300  # 5 minutes
+
+# Windows CMD has 8191 character limit, leave room for command overhead
+MAX_INLINE_PROMPT_LENGTH = 7000
+
+# Cache TTL for provider availability checks (seconds)
+AVAILABILITY_CACHE_TTL = 60
+
+
 ProviderType = Literal["claude", "copilot", "mock"]
 
 

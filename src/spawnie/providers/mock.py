@@ -1,6 +1,8 @@
 """Mock provider for testing."""
 
+import random
 import time
+
 from .base import CLIProvider
 
 
@@ -58,7 +60,6 @@ class MockProvider(CLIProvider):
         time.sleep(delay)
 
         # Simulate failures
-        import random
         if random.random() < self.fail_rate:
             return ("Simulated failure", 1)
 

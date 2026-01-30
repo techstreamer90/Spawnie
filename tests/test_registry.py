@@ -93,10 +93,12 @@ class TestProviderAvailability:
         assert registry.check_provider_available("nonexistent") is False
 
     def test_availability_is_cached(self, registry):
-        """Availability check results are cached."""
+        """Availability check results are cached with TTL."""
         registry.check_provider_available("mock")
         assert "mock" in registry._availability_cache
-        assert registry._availability_cache["mock"] is True
+        available, cached_at = registry._availability_cache["mock"]
+        assert available is True
+        assert cached_at > 0  # Has a timestamp
 
 
 class TestRouteSelection:
