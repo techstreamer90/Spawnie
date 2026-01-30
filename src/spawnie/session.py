@@ -226,28 +226,17 @@ class ShellSession:
         # The agent will be started with instructions on how to communicate
         agent_instructions = self._build_agent_instructions(task, model)
 
-        # Determine the CLI command based on provider
+        # Build the CLI command arguments
         if provider == "copilot" or (not provider and "copilot" in model.lower()):
-            cli_cmd = self._build_copilot_command(agent_instructions)
+            cmd_args = self._build_copilot_args(agent_instructions)
         else:
-            cli_cmd = self._build_claude_command(agent_instructions, model)
-
-        # Start the shell with the command
-        if sys.platform == "win32":
-            # Windows: use cmd /c or powershell -Command
-            if "powershell" in self.shell.lower():
-                shell_cmd = [self.shell, "-NoExit", "-Command", cli_cmd]
-            else:
-                shell_cmd = [self.shell, "/K", cli_cmd]
-        else:
-            # Unix: use shell -c
-            shell_cmd = [self.shell, "-c", cli_cmd]
+            cmd_args = self._build_claude_args(agent_instructions, model)
 
         self._process = subprocess.Popen(
-            shell_cmd,
+            cmd_args,
             cwd=self.working_dir,
             env=env,
-            stdin=subprocess.PIPE,
+            stdin=subprocess.DEVNULL,  # Don't pipe stdin - can cause blocking
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
@@ -286,22 +275,49 @@ Session ID: {self.session_id}
 Begin your work now.
 """
 
-    def _build_claude_command(self, instructions: str, model: str) -> str:
-        """Build the Claude CLI command."""
-        # Escape for shell
-        escaped = instructions.replace("'", "'\\''")
-        model_flag = ""
+    def _build_claude_args(self, instructions: str, model: str) -> list[str]:
+        """Build the Claude CLI command arguments."""
+        import shutil
+
+        claude_path = shutil.which("claude")
+        if not claude_path:
+            raise RuntimeError("Claude CLI not found in PATH")
+
+        args = [claude_path, "--print"]
+
+        # Model flag
         if model:
             # Extract sub-model (e.g., "claude-sonnet" -> "sonnet")
             sub_model = model.replace("claude-", "") if model.startswith("claude-") else model
-            model_flag = f"--model {sub_model}"
+            args.extend(["--model", sub_model])
 
-        return f"claude --print {model_flag} '{escaped}'"
+        # Enable tools for file system access and shell commands
+        # This allows the agent to run spawnie commands
+        args.extend(["--allowedTools", "Bash,Read,Write,Edit,Glob,Grep"])
 
-    def _build_copilot_command(self, instructions: str) -> str:
-        """Build the Copilot CLI command."""
-        escaped = instructions.replace("'", "'\\''")
-        return f"gh copilot suggest -t shell '{escaped}'"
+        # Bypass permission prompts for autonomous operation
+        args.append("--dangerously-skip-permissions")
+
+        # Add the prompt (no shell escaping needed, subprocess handles it)
+        args.append(instructions)
+
+        return args
+
+    def _build_copilot_args(self, instructions: str) -> list[str]:
+        """Build the Copilot CLI command arguments."""
+        import shutil
+
+        # Try standalone copilot first
+        copilot_path = shutil.which("copilot")
+        if copilot_path:
+            return [copilot_path, "suggest", "-t", "shell", instructions]
+
+        # Try gh copilot
+        gh_path = shutil.which("gh")
+        if gh_path:
+            return [gh_path, "copilot", "suggest", "-t", "shell", instructions]
+
+        raise RuntimeError("Copilot CLI not found in PATH")
 
     def events(
         self,
