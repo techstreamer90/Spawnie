@@ -212,7 +212,28 @@ class ShellSession:
             model: Model to use (e.g., "claude-sonnet")
             provider: Specific provider ("claude", "copilot") or None for auto
         """
+        from .tracker import get_tracker
+
         self._setup_session_dir()
+
+        # Register session with tracker so it shows in monitor
+        tracker = get_tracker()
+        self._task_id = f"session-{self.session_id[:12]}"
+        self._tracker = tracker
+
+        # Create description from task (first 50 chars)
+        description = f"Session: {task[:40]}..." if len(task) > 40 else f"Session: {task}"
+        description = description.replace('\n', ' ')
+
+        tracker.create_task(
+            task_id=self._task_id,
+            model=model,
+            workflow_id=None,
+            step=f"shell-session",
+            timeout=3600,  # 1 hour default for sessions
+            description=description,
+        )
+        tracker.start_task(self._task_id)
 
         # Build environment with session info
         env = os.environ.copy()
@@ -355,9 +376,11 @@ Begin your work now.
                     exit_code = self._process.returncode
                     if exit_code == 0:
                         self._status.status = "done"
+                        self._update_tracker_done()
                     else:
                         self._status.status = "error"
                         self._status.error = f"Process exited with code {exit_code}"
+                        self._update_tracker_failed(f"Exit code {exit_code}")
                     self._status.ended_at = datetime.now()
                     self._save_status()
                 return
@@ -371,8 +394,10 @@ Begin your work now.
                     self._status.status = event.type.value
                     if event.type == EventType.DONE:
                         self._status.result = event.data.get("result") or event.message
+                        self._update_tracker_done(event.message)
                     else:
                         self._status.error = event.message
+                        self._update_tracker_failed(event.message)
                     self._status.ended_at = datetime.now()
                     self._save_status()
                     return
@@ -417,14 +442,20 @@ Begin your work now.
         """
         Send input to the shell's stdin.
 
+        NOTE: This method is currently non-functional because sessions use
+        stdin=DEVNULL to prevent blocking issues. Use the file-based
+        communication protocol instead (respond() for questions).
+
         Args:
             text: Text to send (will add newline if not present)
+
+        Raises:
+            NotImplementedError: Always - stdin is not available
         """
-        if self._process and self._process.stdin:
-            if not text.endswith("\n"):
-                text += "\n"
-            self._process.stdin.write(text)
-            self._process.stdin.flush()
+        raise NotImplementedError(
+            "send_input() is not available. Sessions use stdin=DEVNULL. "
+            "Use respond(event_id, answer) for question/answer communication."
+        )
 
     def kill(self) -> None:
         """Kill the session immediately."""
@@ -440,6 +471,31 @@ Begin your work now.
         self._status.status = "killed"
         self._status.ended_at = datetime.now()
         self._save_status()
+        self._update_tracker_killed()
+
+    def _update_tracker_done(self, output: str | None = None) -> None:
+        """Update tracker when session completes successfully."""
+        if hasattr(self, '_tracker') and hasattr(self, '_task_id'):
+            try:
+                self._tracker.complete_task(self._task_id, output[:200] if output else None)
+            except Exception:
+                pass  # Don't fail session if tracker update fails
+
+    def _update_tracker_failed(self, error: str | None = None) -> None:
+        """Update tracker when session fails."""
+        if hasattr(self, '_tracker') and hasattr(self, '_task_id'):
+            try:
+                self._tracker.fail_task(self._task_id, error[:200] if error else "Session failed")
+            except Exception:
+                pass
+
+    def _update_tracker_killed(self) -> None:
+        """Update tracker when session is killed."""
+        if hasattr(self, '_tracker') and hasattr(self, '_task_id'):
+            try:
+                self._tracker.kill_task(self._task_id)
+            except Exception:
+                pass
 
     def is_alive(self) -> bool:
         """Check if the session is still running."""

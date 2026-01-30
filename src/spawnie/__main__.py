@@ -85,6 +85,7 @@ def cmd_run(args):
         mode=args.mode,
         timeout=args.timeout,
         output_dir=Path(args.output_dir) if args.output_dir else None,
+        quality=args.quality,
     )
 
     if args.mode == "async":
@@ -611,6 +612,12 @@ def main():
     run_parser.add_argument("--timeout", type=int, default=300, help="Timeout in seconds")
     run_parser.add_argument("--output-dir", help="Output directory (for mode=output)")
     run_parser.add_argument("--json", action="store_true", help="Output as JSON")
+    run_parser.add_argument(
+        "-q", "--quality",
+        choices=["normal", "extra-clean", "hypertask"],
+        default="normal",
+        help="Quality level: normal (no review), extra-clean (self-review), hypertask (dual review)"
+    )
 
     # workflow command
     wf_parser = subparsers.add_parser("workflow", help="Execute a workflow")

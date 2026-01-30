@@ -2,8 +2,18 @@
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 import uuid
+
+
+# Quality levels control how much review a task receives
+QualityLevel = Literal["normal", "extra-clean", "hypertask"]
+
+QUALITY_DESCRIPTIONS = {
+    "normal": "No review - execute task and return result directly",
+    "extra-clean": "Self-review - agent reviews its own output before returning",
+    "hypertask": "Dual review - self-review + external reviewer for highest quality",
+}
 
 
 @dataclass
@@ -13,6 +23,7 @@ class Task:
     prompt: str
     provider: str
     model: str | None = None
+    quality_level: QualityLevel = "normal"
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
     created_at: datetime = field(default_factory=datetime.now)
     metadata: dict[str, Any] = field(default_factory=dict)
@@ -24,6 +35,7 @@ class Task:
             "prompt": self.prompt,
             "provider": self.provider,
             "model": self.model,
+            "quality_level": self.quality_level,
             "created_at": self.created_at.isoformat(),
             "metadata": self.metadata,
         }
@@ -36,6 +48,7 @@ class Task:
             prompt=data["prompt"],
             provider=data["provider"],
             model=data.get("model"),
+            quality_level=data.get("quality_level", "normal"),
             created_at=datetime.fromisoformat(data["created_at"]),
             metadata=data.get("metadata", {}),
         )

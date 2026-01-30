@@ -16,6 +16,7 @@ import logging
 from .tracker import get_tracker, WorkflowState
 from .registry import get_registry
 from .providers import get_provider
+from .api import SELF_REVIEW_PROMPT, EXTERNAL_REVIEW_PROMPT, FINAL_SYNTHESIS_PROMPT
 
 logger = logging.getLogger("spawnie.workflow")
 
@@ -79,6 +80,12 @@ WORKFLOW_SCHEMA = {
                         "type": "string",
                         "description": "Condition expression (skip if false)",
                     },
+                    "quality": {
+                        "type": "string",
+                        "enum": ["normal", "extra-clean", "hypertask"],
+                        "default": "normal",
+                        "description": "Quality level: normal (fast), extra-clean (self-review), hypertask (dual review)",
+                    },
                 },
             },
         },
@@ -108,6 +115,7 @@ class StepDefinition:
     timeout: int | None = None
     retries: int = 0
     condition: str | None = None
+    quality: str = "normal"  # "normal" | "extra-clean" | "hypertask"
 
     @classmethod
     def from_dict(cls, name: str, data: dict) -> "StepDefinition":
@@ -120,6 +128,7 @@ class StepDefinition:
             timeout=data.get("timeout"),
             retries=data.get("retries", 0),
             condition=data.get("condition"),
+            quality=data.get("quality", "normal"),
         )
 
 
@@ -471,6 +480,10 @@ class WorkflowExecutor:
 
         provider = get_provider(internal_provider)
 
+        # Create description from step name and prompt preview
+        prompt_preview = prompt[:30].replace('\n', ' ')
+        description = f"Step '{step.name}': {prompt_preview}..."
+
         # Track task
         self.tracker.create_task(
             task_id=task_id,
@@ -478,6 +491,7 @@ class WorkflowExecutor:
             workflow_id=workflow_id,
             step=step.name,
             timeout=step.timeout,
+            description=description,
         )
         self.tracker.start_step(workflow_id, step.name, task_id)
         self.tracker.start_task(task_id)
@@ -489,6 +503,16 @@ class WorkflowExecutor:
                 output, exit_code = provider.execute(prompt, route.model_id)
 
                 if exit_code == 0:
+                    # Apply quality-level review if specified
+                    if step.quality != "normal" and output:
+                        output = self._apply_step_review(
+                            output=output,
+                            original_prompt=prompt,
+                            quality=step.quality,
+                            provider=provider,
+                            model_id=route.model_id,
+                        )
+
                     self.tracker.complete_task(task_id, output[:200] if output else None)
                     self.tracker.complete_step(workflow_id, step.name)
                     return {
@@ -521,6 +545,66 @@ class WorkflowExecutor:
         # e.g., "steps.analyze.output" checks if that output exists and is non-empty
         resolved = context.resolve_template(f"{{{{{condition}}}}}")
         return bool(resolved and resolved != f"{{{{{condition}}}}}")
+
+    def _apply_step_review(
+        self,
+        output: str,
+        original_prompt: str,
+        quality: str,
+        provider,
+        model_id: str | None,
+    ) -> str:
+        """
+        Apply quality-level review to step output.
+
+        Based on benchmark findings:
+        - extra-clean (self-review): catches omissions like security, cost, edge cases
+        - hypertask (dual review): catches both omissions AND contradictions
+        """
+        try:
+            # Step 1: Self-review (for both extra-clean and hypertask)
+            self_review_prompt = SELF_REVIEW_PROMPT.format(
+                original_prompt=original_prompt,
+                output=output,
+            )
+            reviewed_output, exit_code = provider.execute(self_review_prompt, model_id)
+
+            if exit_code != 0:
+                logger.warning("Self-review failed, returning original output")
+                return output
+
+            # For extra-clean, return self-reviewed output
+            if quality == "extra-clean":
+                return reviewed_output
+
+            # Step 2: External review (for hypertask only)
+            external_prompt = EXTERNAL_REVIEW_PROMPT.format(
+                original_prompt=original_prompt,
+                output=reviewed_output,
+            )
+            external_review, exit_code = provider.execute(external_prompt, model_id)
+
+            if exit_code != 0:
+                logger.warning("External review failed, returning self-reviewed output")
+                return reviewed_output
+
+            # Step 3: Final synthesis
+            synthesis_prompt = FINAL_SYNTHESIS_PROMPT.format(
+                original_prompt=original_prompt,
+                self_reviewed_output=reviewed_output,
+                external_review=external_review,
+            )
+            final_output, exit_code = provider.execute(synthesis_prompt, model_id)
+
+            if exit_code != 0:
+                # Return self-reviewed with external review attached
+                return f"{reviewed_output}\n\n---\nEXTERNAL REVIEW:\n{external_review}"
+
+            return final_output
+
+        except Exception as e:
+            logger.error("Review process error: %s", e)
+            return output  # Return original on error
 
 
 def get_workflow_schema() -> dict:

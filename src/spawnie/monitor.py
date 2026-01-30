@@ -76,8 +76,14 @@ def render_tasks(tasks: list[TaskState]) -> str:
     lines = []
     for task in tasks:
         symbol = status_symbol(task.status)
-        wf_info = f"[{task.workflow_id}:{task.step}]" if task.workflow_id else ""
-        lines.append(f"   {symbol} {task.id:20} {task.model:15} {task.status:10} {wf_info}")
+        # Show description if available, otherwise fall back to ID
+        if task.description:
+            desc = task.description[:50] + "..." if len(task.description) > 50 else task.description
+            lines.append(f"   {symbol} [bold]{task.model}[/bold] - {desc}")
+            lines.append(f"      ID: {task.id}  Status: {task.status}")
+        else:
+            wf_info = f"[{task.workflow_id}:{task.step}]" if task.workflow_id else ""
+            lines.append(f"   {symbol} {task.id:20} {task.model:15} {task.status:10} {wf_info}")
 
     return "\n".join(lines)
 
@@ -164,6 +170,8 @@ class SpawnieMonitor(App):
         ("r", "refresh", "Refresh"),
         ("k", "kill", "Kill selected"),
         ("s", "screenshot", "Screenshot"),
+        ("+", "faster", "Faster refresh"),
+        ("-", "slower", "Slower refresh"),
     ]
 
     TITLE = "Spawnie Monitor"
@@ -171,11 +179,18 @@ class SpawnieMonitor(App):
 
     refresh_interval = reactive(1.0)
     last_update = reactive("")
+    refresh_count = reactive(0)
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.tracker = get_tracker()
         self._timer: Timer | None = None
+
+    def watch_refresh_interval(self, value: float) -> None:
+        """Handle refresh interval changes - recreate timer with new interval."""
+        if self._timer is not None:
+            self._timer.stop()
+        self._timer = self.set_interval(value, self.refresh_data)
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -210,6 +225,12 @@ class SpawnieMonitor(App):
         self._timer = self.set_interval(self.refresh_interval, self.refresh_data)
         self.refresh_data()
 
+    def on_unmount(self) -> None:
+        """Cleanup when app closes."""
+        if self._timer is not None:
+            self._timer.stop()
+            self._timer = None
+
     def refresh_data(self) -> None:
         """Refresh all data from tracker - uses update() to avoid flicker."""
         try:
@@ -227,8 +248,9 @@ class SpawnieMonitor(App):
             self.query_one("#tasks-panel", Static).update(render_tasks(tasks))
             self.query_one("#alerts-panel", Static).update(render_alerts(alerts))
 
+            self.refresh_count += 1
             self.last_update = datetime.now().strftime("%H:%M:%S")
-            self.sub_title = f"Last update: {self.last_update}"
+            self.sub_title = f"Last update: {self.last_update} (#{self.refresh_count})"
 
         except Exception as e:
             self.notify(f"Error refreshing: {e}", severity="error")
@@ -258,6 +280,16 @@ class SpawnieMonitor(App):
         """Take a screenshot of the monitor."""
         path = self.save_screenshot(path=".")
         self.notify(f"Screenshot saved: {path}")
+
+    def action_faster(self) -> None:
+        """Increase refresh rate (decrease interval)."""
+        self.refresh_interval = max(0.5, self.refresh_interval - 0.5)
+        self.notify(f"Refresh interval: {self.refresh_interval}s")
+
+    def action_slower(self) -> None:
+        """Decrease refresh rate (increase interval)."""
+        self.refresh_interval = min(10.0, self.refresh_interval + 0.5)
+        self.notify(f"Refresh interval: {self.refresh_interval}s")
 
 
 def run_monitor():

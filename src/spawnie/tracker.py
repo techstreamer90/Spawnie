@@ -29,6 +29,7 @@ class TaskState:
     model: str
     status: str  # "queued" | "running" | "completed" | "failed" | "timeout" | "killed"
     created_at: datetime
+    description: str | None = None  # Human-readable task description
     started_at: datetime | None = None
     completed_at: datetime | None = None
     timeout_at: datetime | None = None
@@ -43,6 +44,7 @@ class TaskState:
             "step": self.step,
             "model": self.model,
             "status": self.status,
+            "description": self.description,
             "created_at": self.created_at.isoformat(),
             "started_at": self.started_at.isoformat() if self.started_at else None,
             "completed_at": self.completed_at.isoformat() if self.completed_at else None,
@@ -60,6 +62,7 @@ class TaskState:
             step=data.get("step"),
             model=data["model"],
             status=data["status"],
+            description=data.get("description"),
             created_at=datetime.fromisoformat(data["created_at"]),
             started_at=datetime.fromisoformat(data["started_at"]) if data.get("started_at") else None,
             completed_at=datetime.fromisoformat(data["completed_at"]) if data.get("completed_at") else None,
@@ -297,6 +300,19 @@ class Tracker:
             }
             f.write(json.dumps(record) + "\n")
 
+    def _archive_task(self, task: TaskState):
+        """Archive a completed task to history."""
+        today = datetime.now().strftime("%Y-%m-%d")
+        history_file = self.history_dir / f"{today}.jsonl"
+
+        with open(history_file, "a", encoding="utf-8") as f:
+            record = {
+                "type": "task",
+                "archived_at": datetime.now().isoformat(),
+                **task.to_dict(),
+            }
+            f.write(json.dumps(record) + "\n")
+
     def save(self):
         """Save current state to tracker file."""
         with self._lock:
@@ -315,21 +331,35 @@ class Tracker:
                 "alerts": self.alerts[-10:],  # Keep last 10 alerts
             }
 
-            # Atomic write
-            tmp_path = self.tracker_path.with_suffix(".tmp")
-            with open(tmp_path, "w", encoding="utf-8") as f:
-                json.dump(data, f, indent=2)
-            tmp_path.replace(self.tracker_path)
+            # Atomic write using unique temp file (prevents race conditions)
+            import tempfile
+            fd, tmp_path = tempfile.mkstemp(
+                suffix=".tmp",
+                prefix="tracker_",
+                dir=self.tracker_path.parent,
+            )
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as f:
+                    json.dump(data, f, indent=2)
+                Path(tmp_path).replace(self.tracker_path)
+            except Exception:
+                # Clean up temp file on failure
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
+                raise
 
             self._last_save = datetime.now()
 
     def _add_alert(self, level: str, message: str):
         """Add an alert to the tracker."""
-        self.alerts.append({
+        new_alert = {
             "level": level,
             "message": message,
             "at": datetime.now().isoformat(),
-        })
+        }
+        self.alerts = (self.alerts + [new_alert])[-100:]
         if level == "error":
             logger.error(message)
         elif level == "warn":
@@ -510,6 +540,7 @@ class Tracker:
         workflow_id: str | None = None,
         step: str | None = None,
         timeout: int | None = None,
+        description: str | None = None,
     ) -> TaskState:
         """Create and register a new task."""
         with self._lock:
@@ -530,6 +561,7 @@ class Tracker:
                 step=step,
                 model=model,
                 status="queued",
+                description=description,
                 created_at=now,
                 timeout_at=now + timedelta(seconds=timeout_secs),
             )
@@ -561,6 +593,10 @@ class Tracker:
             task.completed_at = datetime.now()
             task.output_preview = output_preview[:200] if output_preview else None
 
+            # Archive to history before removing
+            self._archive_task(task)
+            self.stats["completed_today"] = self.stats.get("completed_today", 0) + 1
+
             # Remove from active tracking
             del self.tasks[task_id]
             self.save()
@@ -576,6 +612,10 @@ class Tracker:
             task.completed_at = datetime.now()
             task.error = error
 
+            # Archive to history before removing
+            self._archive_task(task)
+            self.stats["failed_today"] = self.stats.get("failed_today", 0) + 1
+
             self._add_alert("error", f"Task {task_id} failed: {error[:100]}")
             del self.tasks[task_id]
             self.save()
@@ -590,6 +630,9 @@ class Tracker:
             task.status = "killed"
             task.completed_at = datetime.now()
             task.error = reason
+
+            # Archive to history before removing
+            self._archive_task(task)
 
             self._add_alert("warn", f"Task {task_id} killed: {reason}")
             del self.tasks[task_id]

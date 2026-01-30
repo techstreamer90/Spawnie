@@ -4,10 +4,10 @@ build-backend = "hatchling.build"
 
 [project]
 name = "spawnie"
-version = "0.1.0"
+version = "0.3.0"
 description = "Spawn tasks to CLI agents (Claude CLI, Copilot CLI) instead of making API calls"
 readme = "README.md"
-license = "All Rights Reserved"
+license = "MIT"
 requires-python = ">=3.11"
 authors = [
     { name = "Spawnie Contributors" }

@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 import tempfile
 from datetime import datetime
 from pathlib import Path
@@ -35,7 +36,7 @@ class QueueManager:
 
     def _validate_task_id(self, task_id: str) -> None:
         """Validate task_id to prevent path traversal attacks."""
-        if not task_id or ".." in task_id or "/" in task_id or "\\" in task_id:
+        if not task_id or not re.match(r'^[a-zA-Z0-9_-]+$', task_id):
             raise ValueError(f"Invalid task_id: {task_id}")
 
     def _task_file(self, task_id: str, directory: Path) -> Path:

@@ -24,6 +24,18 @@ Usage:
     result = run("Explain quantum computing", model="claude-sonnet")
     print(result.output)
 
+    # Run with quality levels for improved output
+    result = run(
+        "Design a security architecture",
+        model="claude-sonnet",
+        quality="hypertask",  # Dual review: self-review + external reviewer
+    )
+
+    # Quality levels:
+    # - "normal": No review (fastest)
+    # - "extra-clean": Self-review (agent reviews its own output)
+    # - "hypertask": Dual review (self-review + external reviewer)
+
     # Async mode
     task_id = run("Long task", model="claude-opus", mode="async")
     result = wait_for_result(task_id)
@@ -85,7 +97,7 @@ from .detection import (
     CLIStatus,
     CLINotFoundError,
 )
-from .models import Task, Result
+from .models import Task, Result, QualityLevel, QUALITY_DESCRIPTIONS
 from .queue import QueueManager
 from .daemon import SpawnieDaemon, run_daemon
 from .providers import (
@@ -167,6 +179,8 @@ __all__ = [
     # Models
     "Task",
     "Result",
+    "QualityLevel",
+    "QUALITY_DESCRIPTIONS",
     # Queue
     "QueueManager",
     # Daemon
