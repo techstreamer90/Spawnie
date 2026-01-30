@@ -588,3 +588,55 @@ def list_tasks(workflow_id: str | None = None) -> list[dict]:
     tracker = get_tracker()
     tasks = tracker.list_tasks(workflow_id)
     return [t.to_dict() for t in tasks]
+
+
+# =============================================================================
+# Shell Session API
+# =============================================================================
+
+def spawn_shell(
+    task: str,
+    *,
+    model: str = "claude-sonnet",
+    provider: str | None = None,
+    working_dir: Path | None = None,
+    timeout: int = 3600,
+) -> "ShellSession":
+    """
+    Spawn an interactive shell session with an agent.
+
+    The agent runs in a shell with file system access and can communicate
+    back using events (questions, progress, done).
+
+    Args:
+        task: The task/playbook for the agent to follow.
+        model: Model to use (e.g., "claude-sonnet", "claude-opus").
+        provider: Force specific provider ("claude", "copilot") or None for auto.
+        working_dir: Working directory for the session (default: current dir).
+        timeout: Maximum session duration in seconds (default: 1 hour).
+
+    Returns:
+        A ShellSession object for interacting with the agent.
+
+    Example:
+        session = spawn_shell(
+            task="Analyze this codebase and create a summary",
+            model="claude-sonnet",
+            working_dir=Path("./my-project"),
+        )
+
+        for event in session.events():
+            if event.type == EventType.QUESTION:
+                answer = get_answer(event.message)
+                session.respond(event.event_id, answer)
+            elif event.type == EventType.PROGRESS:
+                print(f"Progress: {event.message}")
+            elif event.type == EventType.DONE:
+                print(f"Done: {event.data.get('result')}")
+                break
+    """
+    from .session import ShellSession
+
+    session = ShellSession(working_dir=working_dir)
+    session.start(task=task, model=model, provider=provider)
+    return session

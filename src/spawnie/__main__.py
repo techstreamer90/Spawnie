@@ -26,6 +26,18 @@ from . import (
     get_tracker,
 )
 from .api import spawn
+from .session import (
+    ShellSession,
+    ask_question,
+    report_progress,
+    signal_done,
+    signal_error,
+    get_current_session,
+    list_sessions,
+    get_session,
+    cleanup_ended_sessions,
+    EventType,
+)
 
 
 def cmd_setup(args):
@@ -399,6 +411,183 @@ def cmd_config(args):
     return 0
 
 
+# =============================================================================
+# Shell Session Commands (for agent communication)
+# =============================================================================
+
+def cmd_ask(args):
+    """Ask a question and wait for response (used inside a session)."""
+    session_info = get_current_session()
+    if not session_info:
+        print("Error: Not running inside a Spawnie session", file=sys.stderr)
+        print("This command should be used by an agent running in a shell session.", file=sys.stderr)
+        return 1
+
+    try:
+        answer = ask_question(args.question, timeout=args.timeout)
+        print(answer)
+        return 0
+    except TimeoutError:
+        print(f"Error: No response received within {args.timeout}s", file=sys.stderr)
+        return 1
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+
+
+def cmd_progress(args):
+    """Report progress (used inside a session)."""
+    session_info = get_current_session()
+    if not session_info:
+        print("Error: Not running inside a Spawnie session", file=sys.stderr)
+        return 1
+
+    try:
+        data = {}
+        if args.percent is not None:
+            data["percent"] = args.percent
+        if args.step:
+            data["step"] = args.step
+
+        report_progress(args.message, data=data if data else None)
+        return 0
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+
+
+def cmd_done(args):
+    """Signal completion (used inside a session)."""
+    session_info = get_current_session()
+    if not session_info:
+        print("Error: Not running inside a Spawnie session", file=sys.stderr)
+        return 1
+
+    try:
+        signal_done(result=args.result, message=args.message)
+        print("Session complete.")
+        return 0
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+
+
+def cmd_shell(args):
+    """Start an interactive shell session."""
+    session = ShellSession(
+        working_dir=Path(args.working_dir) if args.working_dir else None,
+    )
+
+    print(f"Starting shell session: {session.session_id}")
+    print(f"Working directory: {session.working_dir}")
+    print(f"Model: {args.model}")
+    print()
+
+    session.start(
+        task=args.task,
+        model=args.model,
+        provider=args.provider,
+    )
+
+    print("Session started. Listening for events...")
+    print("Press Ctrl+C to stop.")
+    print()
+
+    try:
+        for event in session.events(timeout=args.timeout):
+            timestamp = event.timestamp.strftime("%H:%M:%S")
+
+            if event.type == EventType.QUESTION:
+                print(f"[{timestamp}] QUESTION: {event.message}")
+                if args.interactive:
+                    answer = input("Your answer: ")
+                    session.respond(event.event_id, answer)
+                else:
+                    print("  (Non-interactive mode - no response sent)")
+                    print(f"  Event ID: {event.event_id}")
+
+            elif event.type == EventType.PROGRESS:
+                print(f"[{timestamp}] PROGRESS: {event.message}")
+                if event.data:
+                    print(f"  Data: {event.data}")
+
+            elif event.type == EventType.DONE:
+                print(f"[{timestamp}] DONE: {event.message}")
+                if event.data.get("result"):
+                    print(f"  Result: {event.data['result']}")
+                break
+
+            elif event.type == EventType.ERROR:
+                print(f"[{timestamp}] ERROR: {event.message}")
+                break
+
+    except KeyboardInterrupt:
+        print("\nInterrupted. Killing session...")
+        session.kill()
+    except TimeoutError as e:
+        print(f"\nTimeout: {e}")
+        session.kill()
+
+    print(f"\nSession ended. Status: {session.status}")
+    return 0
+
+
+def cmd_sessions(args):
+    """List and manage shell sessions."""
+    if args.cleanup:
+        cleaned = cleanup_ended_sessions(max_age_hours=args.max_age)
+        print(f"Cleaned up {cleaned} old sessions")
+        return 0
+
+    sessions = list_sessions(include_ended=args.all)
+
+    if not sessions:
+        print("No sessions found.")
+        return 0
+
+    if args.json:
+        print(json.dumps([s.to_dict() for s in sessions], indent=2, default=str))
+        return 0
+
+    print("Shell Sessions:")
+    print()
+    for s in sessions:
+        status_icon = {
+            "starting": "...",
+            "running": ">>>",
+            "done": "[OK]",
+            "error": "[!!]",
+            "killed": "[X]",
+        }.get(s.status, "???")
+
+        print(f"  {status_icon} {s.session_id}")
+        print(f"       Status: {s.status}")
+        print(f"       Started: {s.started_at.strftime('%Y-%m-%d %H:%M:%S')}")
+        if s.ended_at:
+            print(f"       Ended: {s.ended_at.strftime('%Y-%m-%d %H:%M:%S')}")
+        if s.pid:
+            print(f"       PID: {s.pid}")
+        if s.result:
+            print(f"       Result: {s.result[:50]}...")
+        if s.error:
+            print(f"       Error: {s.error[:50]}...")
+        print()
+
+    return 0
+
+
+def cmd_session_kill(args):
+    """Kill a specific session."""
+    session = get_session(args.session_id)
+    if not session:
+        print(f"Session not found: {args.session_id}")
+        return 1
+
+    session.kill()
+    print(f"Killed session: {args.session_id}")
+    return 0
+
+
 def main():
     """Main entry point."""
     parser = argparse.ArgumentParser(
@@ -477,6 +666,46 @@ def main():
     task_status_parser = subparsers.add_parser("task-status", help="Check task status (legacy)")
     task_status_parser.add_argument("task_id", help="The task ID to check")
 
+    # ==========================================================================
+    # Shell Session Commands
+    # ==========================================================================
+
+    # shell command - start interactive session
+    shell_parser = subparsers.add_parser("shell", help="Start an interactive shell session")
+    shell_parser.add_argument("task", help="The task/playbook for the agent")
+    shell_parser.add_argument("-m", "--model", default="claude-sonnet", help="Model to use")
+    shell_parser.add_argument("--provider", choices=["claude", "copilot"], help="Force specific provider")
+    shell_parser.add_argument("-d", "--working-dir", help="Working directory for the session")
+    shell_parser.add_argument("--timeout", type=int, default=3600, help="Session timeout in seconds")
+    shell_parser.add_argument("-i", "--interactive", action="store_true", help="Interactive mode (answer questions)")
+
+    # sessions command - list sessions
+    sessions_parser = subparsers.add_parser("sessions", help="List shell sessions")
+    sessions_parser.add_argument("--all", "-a", action="store_true", help="Include ended sessions")
+    sessions_parser.add_argument("--json", action="store_true", help="Output as JSON")
+    sessions_parser.add_argument("--cleanup", action="store_true", help="Clean up old sessions")
+    sessions_parser.add_argument("--max-age", type=int, default=24, help="Max age in hours for cleanup")
+
+    # session-kill command - kill a session
+    session_kill_parser = subparsers.add_parser("session-kill", help="Kill a shell session")
+    session_kill_parser.add_argument("session_id", help="Session ID to kill")
+
+    # ask command - ask question (used inside session)
+    ask_parser = subparsers.add_parser("ask", help="Ask orchestrator a question (inside session)")
+    ask_parser.add_argument("question", help="The question to ask")
+    ask_parser.add_argument("--timeout", type=int, default=300, help="Timeout waiting for response")
+
+    # progress command - report progress (used inside session)
+    progress_parser = subparsers.add_parser("progress", help="Report progress (inside session)")
+    progress_parser.add_argument("message", help="Progress message")
+    progress_parser.add_argument("--percent", type=int, help="Completion percentage (0-100)")
+    progress_parser.add_argument("--step", help="Current step name")
+
+    # done command - signal completion (used inside session)
+    done_parser = subparsers.add_parser("done", help="Signal task completion (inside session)")
+    done_parser.add_argument("--result", help="Path to result file")
+    done_parser.add_argument("--message", help="Completion message")
+
     args = parser.parse_args()
 
     if args.command is None:
@@ -497,6 +726,13 @@ def main():
         "daemon": cmd_daemon,
         "submit": cmd_submit,
         "task-status": cmd_task_status,
+        # Shell session commands
+        "shell": cmd_shell,
+        "sessions": cmd_sessions,
+        "session-kill": cmd_session_kill,
+        "ask": cmd_ask,
+        "progress": cmd_progress,
+        "done": cmd_done,
     }
 
     return commands[args.command](args)

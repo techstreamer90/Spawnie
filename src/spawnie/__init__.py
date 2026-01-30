@@ -35,6 +35,24 @@ Usage:
         mode="output",
         output_dir="./output",
     )
+
+Shell Sessions (Interactive Agents):
+    from spawnie import spawn_shell, EventType
+
+    # Spawn an agent with file system access
+    session = spawn_shell(
+        task="Analyze this codebase",
+        model="claude-sonnet",
+        working_dir=Path("./project"),
+    )
+
+    # Handle bidirectional communication
+    for event in session.events():
+        if event.type == EventType.QUESTION:
+            session.respond(event.event_id, "your answer")
+        elif event.type == EventType.DONE:
+            print(f"Result: {event.data.get('result')}")
+            break
 """
 
 from .api import (
@@ -50,6 +68,8 @@ from .api import (
     get_workflow_guidance,
     list_workflows,
     list_tasks,
+    # Shell Session API
+    spawn_shell,
     # Legacy API (backwards compatible)
     spawn,
     spawn_async,
@@ -96,6 +116,15 @@ from .workflow import (
     WorkflowResult,
     StepDefinition,
 )
+from .session import (
+    ShellSession,
+    SessionEvent,
+    SessionStatus,
+    EventType,
+    list_sessions,
+    get_session,
+    cleanup_ended_sessions,
+)
 
 __version__ = "0.3.0"
 
@@ -112,6 +141,15 @@ __all__ = [
     "get_workflow_guidance",
     "list_workflows",
     "list_tasks",
+    # Shell Session API
+    "spawn_shell",
+    "ShellSession",
+    "SessionEvent",
+    "SessionStatus",
+    "EventType",
+    "list_sessions",
+    "get_session",
+    "cleanup_ended_sessions",
     # Legacy API
     "spawn",
     "spawn_async",

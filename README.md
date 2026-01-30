@@ -191,6 +191,89 @@ result = run("test prompt", model="test-model")
 # Returns: "[Mock Response]\nPrompt received (11 chars)..."
 ```
 
+## Shell Sessions (Interactive Agents)
+
+Shell sessions allow you to spawn an agent with full file system access that can communicate bidirectionally with an orchestrator.
+
+### Spawning a Shell Session
+
+```python
+from spawnie import spawn_shell, EventType
+
+session = spawn_shell(
+    task="Analyze this codebase and propose a refactor plan",
+    model="claude-sonnet",
+    working_dir=Path("./my-project"),
+)
+
+# Event loop - handle agent communication
+for event in session.events():
+    if event.type == EventType.QUESTION:
+        # Agent is asking a question
+        print(f"Agent asks: {event.message}")
+        answer = input("Your answer: ")
+        session.respond(event.event_id, answer)
+
+    elif event.type == EventType.PROGRESS:
+        # Agent reports progress
+        print(f"Progress: {event.message}")
+
+    elif event.type == EventType.DONE:
+        # Agent completed the task
+        print(f"Done! Result: {event.data.get('result')}")
+        break
+
+    elif event.type == EventType.ERROR:
+        print(f"Error: {event.message}")
+        break
+```
+
+### Inside the Session (Agent Side)
+
+The agent running in the shell uses CLI commands to communicate:
+
+```bash
+# Ask the orchestrator a question (blocks until answered)
+answer=$(spawnie ask "Should I include the legacy modules?")
+
+# Report progress (non-blocking)
+spawnie progress "Analyzing module 3 of 10" --percent 30
+
+# Spawn a "dark" subtask (runs in background, no shell)
+result=$(spawnie run "Summarize this file" -m claude-haiku --dark)
+
+# Signal completion
+spawnie done --result "./output/plan.md" --message "Refactor plan complete"
+```
+
+### Session Management
+
+```bash
+# Start a session manually (for testing)
+spawnie shell "Your task here" -m claude-sonnet -i  # -i for interactive
+
+# List active sessions
+spawnie sessions
+
+# List all sessions including ended
+spawnie sessions --all
+
+# Kill a session
+spawnie session-kill <session-id>
+
+# Clean up old sessions
+spawnie sessions --cleanup --max-age 24
+```
+
+### Event Types
+
+| Event | Description | Blocks? |
+|-------|-------------|---------|
+| `question` | Agent needs input to proceed | Yes (waits for response) |
+| `progress` | Informational status update | No |
+| `done` | Task complete, session ends | N/A |
+| `error` | Something went wrong | N/A |
+
 ## Real-time Monitoring
 
 ### TUI Monitor (Recommended)
