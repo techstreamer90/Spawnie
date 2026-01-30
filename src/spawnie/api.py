@@ -8,6 +8,7 @@ All execution goes through workflows - even single prompts become single-step
 workflows for consistent tracking and monitoring.
 """
 
+import logging
 import subprocess
 import time
 from pathlib import Path
@@ -17,6 +18,8 @@ from .config import SpawnieConfig
 from .models import Task, Result, QualityLevel
 from .queue import QueueManager
 from .providers import get_provider
+
+logger = logging.getLogger("spawnie.api")
 
 
 # Execution modes

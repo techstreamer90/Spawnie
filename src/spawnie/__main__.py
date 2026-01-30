@@ -40,7 +40,7 @@ from .session import (
 )
 
 
-def cmd_setup(args):
+def cmd_setup(args: argparse.Namespace) -> int:
     """Initialize Spawnie configuration."""
     config_path = setup_registry()
     print(f"Created config at: {config_path}")
@@ -53,7 +53,7 @@ def cmd_setup(args):
     return 0
 
 
-def cmd_models(args):
+def cmd_models(args: argparse.Namespace) -> int:
     """List available models."""
     models = list_models()
 
@@ -77,7 +77,7 @@ def cmd_models(args):
     return 0
 
 
-def cmd_run(args):
+def cmd_run(args: argparse.Namespace) -> int:
     """Run a prompt."""
     result = run(
         args.prompt,
@@ -119,7 +119,7 @@ def cmd_run(args):
     return 0 if result.succeeded else 1
 
 
-def cmd_workflow(args):
+def cmd_workflow(args: argparse.Namespace) -> int:
     """Execute a workflow."""
     # Load workflow from file
     workflow_path = Path(args.workflow)
@@ -180,7 +180,7 @@ def cmd_workflow(args):
     return 0 if result.status == "completed" else 1
 
 
-def cmd_status(args):
+def cmd_status(args: argparse.Namespace) -> int:
     """Show tracker status."""
     if args.workflow_id:
         # Specific workflow
@@ -264,7 +264,7 @@ def cmd_status(args):
     return 0
 
 
-def cmd_kill(args):
+def cmd_kill(args: argparse.Namespace) -> int:
     """Kill a workflow or task."""
     try:
         result = kill(args.target_id)
@@ -278,13 +278,13 @@ def cmd_kill(args):
         return 1
 
 
-def cmd_guidance(args):
+def cmd_guidance(args: argparse.Namespace) -> int:
     """Show workflow guidance for agents."""
     print(get_workflow_guidance())
     return 0
 
 
-def cmd_detect(args):
+def cmd_detect(args: argparse.Namespace) -> int:
     """Check CLI availability."""
     status = detect_cli(args.provider)
 
@@ -309,7 +309,7 @@ def cmd_detect(args):
     return 0 if status.installed else 1
 
 
-def cmd_daemon(args):
+def cmd_daemon(args: argparse.Namespace) -> int:
     """Run the daemon."""
     config = SpawnieConfig(
         provider=args.provider,
@@ -322,7 +322,7 @@ def cmd_daemon(args):
     return 0
 
 
-def cmd_submit(args):
+def cmd_submit(args: argparse.Namespace) -> int:
     """Submit a task (legacy)."""
     result_or_id = spawn(
         args.prompt,
@@ -350,7 +350,7 @@ def cmd_submit(args):
         return 0
 
 
-def cmd_task_status(args):
+def cmd_task_status(args: argparse.Namespace) -> int:
     """Check task status (legacy)."""
     status = get_status(args.task_id)
 
@@ -377,7 +377,7 @@ def cmd_task_status(args):
     return 0
 
 
-def cmd_monitor(args):
+def cmd_monitor(args: argparse.Namespace) -> int:
     """Launch the TUI monitor."""
     try:
         from .monitor import run_monitor
@@ -391,7 +391,7 @@ def cmd_monitor(args):
     return 0
 
 
-def cmd_config(args):
+def cmd_config(args: argparse.Namespace) -> int:
     """Show or edit configuration."""
     registry = get_registry()
 
@@ -423,7 +423,7 @@ def cmd_config(args):
 # Shell Session Commands (for agent communication)
 # =============================================================================
 
-def cmd_ask(args):
+def cmd_ask(args: argparse.Namespace) -> int:
     """Ask a question and wait for response (used inside a session)."""
     session_info = get_current_session()
     if not session_info:
@@ -443,7 +443,7 @@ def cmd_ask(args):
         return 1
 
 
-def cmd_progress(args):
+def cmd_progress(args: argparse.Namespace) -> int:
     """Report progress (used inside a session)."""
     session_info = get_current_session()
     if not session_info:
@@ -464,7 +464,7 @@ def cmd_progress(args):
         return 1
 
 
-def cmd_done(args):
+def cmd_done(args: argparse.Namespace) -> int:
     """Signal completion (used inside a session)."""
     session_info = get_current_session()
     if not session_info:
@@ -480,7 +480,7 @@ def cmd_done(args):
         return 1
 
 
-def cmd_shell(args):
+def cmd_shell(args: argparse.Namespace) -> int:
     """Start an interactive shell session."""
     session = ShellSession(
         working_dir=Path(args.working_dir) if args.working_dir else None,
@@ -540,7 +540,7 @@ def cmd_shell(args):
     return 0
 
 
-def cmd_sessions(args):
+def cmd_sessions(args: argparse.Namespace) -> int:
     """List and manage shell sessions."""
     if args.cleanup:
         cleaned = cleanup_ended_sessions(max_age_hours=args.max_age)
@@ -584,7 +584,7 @@ def cmd_sessions(args):
     return 0
 
 
-def cmd_session_kill(args):
+def cmd_session_kill(args: argparse.Namespace) -> int:
     """Kill a specific session."""
     session = get_session(args.session_id)
     if not session:
@@ -605,7 +605,7 @@ def get_workflows_library_dir() -> Path:
     return Path.home() / ".spawnie" / "workflows"
 
 
-def cmd_workflows(args):
+def cmd_workflows(args: argparse.Namespace) -> int:
     """Manage the workflows library."""
     library_dir = get_workflows_library_dir()
 
@@ -752,7 +752,7 @@ def cmd_workflows(args):
         return 1
 
 
-def main():
+def main() -> int:
     """Main entry point."""
     parser = argparse.ArgumentParser(
         prog="spawnie",

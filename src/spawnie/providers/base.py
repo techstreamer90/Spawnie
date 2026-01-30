@@ -1,11 +1,14 @@
 """Base class for CLI providers."""
 
+import logging
 import subprocess
 import tempfile
 from abc import ABC, abstractmethod
 from pathlib import Path
 
 from ..config import MAX_INLINE_PROMPT_LENGTH, DEFAULT_TIMEOUT
+
+logger = logging.getLogger("spawnie.providers")
 
 
 class CLIProvider(ABC):

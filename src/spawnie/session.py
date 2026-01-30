@@ -17,6 +17,7 @@ Event Types:
 """
 
 import json
+import logging
 import os
 import signal
 import subprocess
@@ -28,6 +29,8 @@ from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from typing import Generator, Any
+
+logger = logging.getLogger("spawnie.session")
 
 from .config import DEFAULT_TIMEOUT
 
