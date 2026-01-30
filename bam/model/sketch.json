@@ -34,6 +34,14 @@
     "Concept": {
       "description": "Architectural concept or pattern",
       "properties": ["description", "rationale"]
+    },
+    "Todo": {
+      "description": "Work that needs to be done",
+      "properties": ["description", "status", "priority"]
+    },
+    "Status": {
+      "description": "State of the model or a part of it",
+      "properties": ["coverage", "health", "last_verified"]
     }
   },
 
@@ -72,6 +80,16 @@
       "description": "Code embodies an architectural concept",
       "from_types": ["Module", "Class"],
       "to_types": ["Concept"]
+    },
+    "NEEDS": {
+      "description": "Something needs work done",
+      "from_types": ["Module", "Class", "Function", "Status"],
+      "to_types": ["Todo"]
+    },
+    "BLOCKED_BY": {
+      "description": "A todo is blocked by another",
+      "from_types": ["Todo"],
+      "to_types": ["Todo"]
     }
   },
 
@@ -471,6 +489,61 @@
       }
     },
 
+    {
+      "id": "status-model",
+      "type": "Status",
+      "label": "Model Status",
+      "coverage": {
+        "modules": "10/14 (missing: config, daemon, detection, utils)",
+        "classes": "10/~20 (partial)",
+        "functions": "6/~30 (partial)",
+        "edges": "partial (imports, defines, some uses)"
+      },
+      "health": "incomplete",
+      "last_verified": "2026-01-31T02:00:00Z"
+    },
+
+    {
+      "id": "todo-add-missing-modules",
+      "type": "Todo",
+      "label": "Add missing modules",
+      "description": "Add config.py, daemon.py, detection.py, utils.py to model",
+      "status": "pending",
+      "priority": "high"
+    },
+    {
+      "id": "todo-complete-classes",
+      "type": "Todo",
+      "label": "Complete class coverage",
+      "description": "Add Route, ModelConfig, ProviderConfig, SpawnieConfig, SpawnieDaemon, etc.",
+      "status": "pending",
+      "priority": "medium"
+    },
+    {
+      "id": "todo-add-all-functions",
+      "type": "Todo",
+      "label": "Add all public functions",
+      "description": "Scan modules for all public functions, add to model",
+      "status": "pending",
+      "priority": "medium"
+    },
+    {
+      "id": "todo-complete-edges",
+      "type": "Todo",
+      "label": "Complete edge mapping",
+      "description": "Map all CALLS, USES, IMPORTS edges between nodes",
+      "status": "pending",
+      "priority": "low"
+    },
+    {
+      "id": "todo-update-colors",
+      "type": "Todo",
+      "label": "Update color files",
+      "description": "Color files are stale - need to sync with current sketch",
+      "status": "pending",
+      "priority": "low"
+    },
+
     {"id": "concept-task-as-workflow", "type": "Concept", "label": "Tasks as Single-Step Workflows"},
     {"id": "concept-model-routing", "type": "Concept", "label": "Model Routing"},
     {"id": "concept-parallel-exec", "type": "Concept", "label": "Parallel Step Execution"},
@@ -542,6 +615,16 @@
     {"type": "EMBODIES", "from": "mod-registry", "to": "concept-model-routing"},
     {"type": "EMBODIES", "from": "mod-workflow", "to": "concept-parallel-exec"},
     {"type": "EMBODIES", "from": "mod-tracker", "to": "concept-orphan-detection"},
-    {"type": "EMBODIES", "from": "mod-workflow", "to": "concept-quality-levels"}
+    {"type": "EMBODIES", "from": "mod-workflow", "to": "concept-quality-levels"},
+
+    {"type": "NEEDS", "from": "status-model", "to": "todo-add-missing-modules"},
+    {"type": "NEEDS", "from": "status-model", "to": "todo-complete-classes"},
+    {"type": "NEEDS", "from": "status-model", "to": "todo-add-all-functions"},
+    {"type": "NEEDS", "from": "status-model", "to": "todo-complete-edges"},
+    {"type": "NEEDS", "from": "status-model", "to": "todo-update-colors"},
+
+    {"type": "BLOCKED_BY", "from": "todo-complete-edges", "to": "todo-add-missing-modules"},
+    {"type": "BLOCKED_BY", "from": "todo-complete-edges", "to": "todo-complete-classes"},
+    {"type": "BLOCKED_BY", "from": "todo-update-colors", "to": "todo-add-missing-modules"}
   ]
 }
