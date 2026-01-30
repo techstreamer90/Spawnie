@@ -1,0 +1,31 @@
+{
+  "name": "slow-demo",
+  "description": "A workflow that takes time so you can watch the monitor",
+
+  "inputs": {
+    "topic": "string"
+  },
+
+  "steps": {
+    "research": {
+      "prompt": "List 3 interesting facts about {{inputs.topic}}. Be brief.",
+      "model": "claude-haiku"
+    },
+    "expand": {
+      "prompt": "Take these facts and add one more detail to each:\n\n{{steps.research.output}}",
+      "model": "claude-haiku",
+      "depends": ["research"]
+    },
+    "summarize": {
+      "prompt": "Write a one paragraph summary based on:\n\n{{steps.expand.output}}",
+      "model": "claude-haiku",
+      "depends": ["expand"]
+    }
+  },
+
+  "outputs": {
+    "facts": "{{steps.research.output}}",
+    "expanded": "{{steps.expand.output}}",
+    "summary": "{{steps.summarize.output}}"
+  }
+}

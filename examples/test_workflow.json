@@ -1,0 +1,29 @@
+{
+  "name": "test-workflow",
+  "description": "A simple test workflow for monitor demo",
+
+  "inputs": {
+    "message": "string"
+  },
+
+  "steps": {
+    "step1": {
+      "prompt": "Echo back: {{inputs.message}}",
+      "model": "test-mock"
+    },
+    "step2": {
+      "prompt": "Count to 3 slowly",
+      "model": "test-mock",
+      "depends": ["step1"]
+    },
+    "step3": {
+      "prompt": "Summarize: {{steps.step1.output}} and {{steps.step2.output}}",
+      "model": "test-mock",
+      "depends": ["step1", "step2"]
+    }
+  },
+
+  "outputs": {
+    "result": "{{steps.step3.output}}"
+  }
+}

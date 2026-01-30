@@ -1,0 +1,27 @@
+{
+  "name": "test-workflow",
+  "description": "A simple test workflow using mock model",
+
+  "inputs": {
+    "data": "string"
+  },
+
+  "steps": {
+    "analyze": {
+      "prompt": "Analyze this data: {{inputs.data}}",
+      "model": "test-mock",
+      "output": "analysis"
+    },
+    "summarize": {
+      "prompt": "Summarize this analysis: {{steps.analyze.output}}",
+      "model": "test-mock",
+      "depends": ["analyze"],
+      "output": "summary"
+    }
+  },
+
+  "outputs": {
+    "analysis": "{{steps.analyze.output}}",
+    "summary": "{{steps.summarize.output}}"
+  }
+}
