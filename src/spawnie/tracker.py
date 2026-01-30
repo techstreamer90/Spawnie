@@ -36,7 +36,10 @@ class TaskState:
     timeout_at: datetime | None = None
     pid: int | None = None
     error: str | None = None
-    output_preview: str | None = None  # First 200 chars of output
+    output_preview: str | None = None  # First 500 chars of output
+    output_file: str | None = None  # Path to full output file
+    tool_calls: list[dict] | None = None  # Logged tool/file operations
+    metadata: dict | None = None  # Additional task metadata
 
     def to_dict(self) -> dict:
         return {
@@ -54,6 +57,9 @@ class TaskState:
             "pid": self.pid,
             "error": self.error,
             "output_preview": self.output_preview,
+            "output_file": self.output_file,
+            "tool_calls": self.tool_calls,
+            "metadata": self.metadata,
         }
 
     @classmethod
@@ -73,6 +79,9 @@ class TaskState:
             pid=data.get("pid"),
             error=data.get("error"),
             output_preview=data.get("output_preview"),
+            output_file=data.get("output_file"),
+            tool_calls=data.get("tool_calls"),
+            metadata=data.get("metadata"),
         )
 
 
@@ -231,10 +240,12 @@ class Tracker:
         self,
         tracker_path: Path | None = None,
         history_dir: Path | None = None,
+        outputs_dir: Path | None = None,
         limits: TrackerLimits | None = None,
     ):
         self.tracker_path = tracker_path or DEFAULT_TRACKER_PATH
         self.history_dir = history_dir or DEFAULT_HISTORY_DIR
+        self.outputs_dir = outputs_dir or (self.tracker_path.parent / "outputs")
         self.limits = limits or TrackerLimits()
 
         self.workflows: dict[str, WorkflowState] = {}
@@ -250,6 +261,7 @@ class Tracker:
         # Ensure directories exist
         self.tracker_path.parent.mkdir(parents=True, exist_ok=True)
         self.history_dir.mkdir(parents=True, exist_ok=True)
+        self.outputs_dir.mkdir(parents=True, exist_ok=True)
 
         # Load existing state if present
         self._load()
@@ -672,7 +684,92 @@ class Tracker:
             task.pid = pid or os.getpid()
             self.save()
 
-    def complete_task(self, task_id: str, output_preview: str | None = None):
+    def _save_task_output(self, task_id: str, output: str) -> str | None:
+        """Save full task output to a separate file. Returns the file path."""
+        if not output:
+            return None
+
+        # Organize by date for easier cleanup
+        today = datetime.now().strftime("%Y-%m-%d")
+        output_dir = self.outputs_dir / today
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        output_file = output_dir / f"{task_id}.txt"
+        try:
+            with open(output_file, "w", encoding="utf-8") as f:
+                f.write(output)
+            return str(output_file)
+        except Exception as e:
+            logger.warning("Failed to save task output: %s", e)
+            return None
+
+    def log_tool_call(
+        self,
+        task_id: str,
+        tool: str,
+        parameters: dict | None = None,
+        result: str | None = None,
+        duration_ms: float | None = None,
+    ):
+        """Log a tool call for a task (for debugging/evidence trails).
+
+        Args:
+            task_id: The task ID
+            tool: Tool name (e.g., "read_file", "grep", "glob")
+            parameters: Tool parameters (e.g., {"file": "path/to/file.py"})
+            result: Brief result summary (truncated for large outputs)
+            duration_ms: How long the tool call took
+        """
+        with self._lock:
+            if task_id not in self.tasks:
+                return
+
+            task = self.tasks[task_id]
+            if task.tool_calls is None:
+                task.tool_calls = []
+
+            task.tool_calls.append({
+                "tool": tool,
+                "parameters": parameters,
+                "result": result[:500] if result and len(result) > 500 else result,
+                "duration_ms": duration_ms,
+                "at": datetime.now().isoformat(),
+            })
+
+            # Don't save on every tool call - too expensive
+            # Tool calls are persisted when task completes
+
+    def set_task_metadata(self, task_id: str, key: str, value: any):
+        """Set metadata on a task."""
+        with self._lock:
+            if task_id not in self.tasks:
+                return
+
+            task = self.tasks[task_id]
+            if task.metadata is None:
+                task.metadata = {}
+            task.metadata[key] = value
+
+    def get_task_tool_calls(self, task_id: str) -> list[dict] | None:
+        """Get tool calls for a task (from active task or history)."""
+        # Check active tasks
+        if task_id in self.tasks:
+            return self.tasks[task_id].tool_calls
+
+        # Search in history
+        for history_file in sorted(self.history_dir.glob("*.jsonl"), reverse=True):
+            try:
+                with open(history_file, "r", encoding="utf-8") as f:
+                    for line in f:
+                        record = json.loads(line)
+                        if record.get("type") == "task" and record.get("id") == task_id:
+                            return record.get("tool_calls")
+            except Exception:
+                continue
+
+        return None
+
+    def complete_task(self, task_id: str, output: str | None = None):
         """Mark a task as completed."""
         with self._lock:
             if task_id not in self.tasks:
@@ -681,7 +778,11 @@ class Tracker:
             task = self.tasks[task_id]
             task.status = "completed"
             task.completed_at = datetime.now()
-            task.output_preview = output_preview[:200] if output_preview else None
+            task.output_preview = output[:500] if output else None
+
+            # Save full output to file
+            if output:
+                task.output_file = self._save_task_output(task_id, output)
 
             # Track model usage (counts/runtime tracked at workflow level)
             if task.model:
@@ -738,6 +839,36 @@ class Tracker:
             del self.tasks[task_id]
             self.save()
 
+    def get_task_output(self, task_id: str) -> str | None:
+        """Get full output for a task from the output file.
+
+        Works for both active tasks and archived tasks (looks up output file path from history).
+        """
+        # Check active tasks first
+        if task_id in self.tasks:
+            task = self.tasks[task_id]
+            if task.output_file and Path(task.output_file).exists():
+                with open(task.output_file, "r", encoding="utf-8") as f:
+                    return f.read()
+            return task.output_preview
+
+        # Search in history
+        for history_file in sorted(self.history_dir.glob("*.jsonl"), reverse=True):
+            try:
+                with open(history_file, "r", encoding="utf-8") as f:
+                    for line in f:
+                        record = json.loads(line)
+                        if record.get("type") == "task" and record.get("id") == task_id:
+                            output_file = record.get("output_file")
+                            if output_file and Path(output_file).exists():
+                                with open(output_file, "r", encoding="utf-8") as of:
+                                    return of.read()
+                            return record.get("output_preview")
+            except Exception:
+                continue
+
+        return None
+
     # -------------------------------------------------------------------------
     # Monitoring
     # -------------------------------------------------------------------------
@@ -747,9 +878,21 @@ class Tracker:
         if pid is None:
             return False
         try:
-            # On Windows and Unix, this checks if process exists
-            os.kill(pid, 0)
-            return True
+            import sys
+            if sys.platform == "win32":
+                # On Windows, use ctypes to check process existence
+                import ctypes
+                kernel32 = ctypes.windll.kernel32
+                SYNCHRONIZE = 0x00100000
+                handle = kernel32.OpenProcess(SYNCHRONIZE, False, pid)
+                if handle:
+                    kernel32.CloseHandle(handle)
+                    return True
+                return False
+            else:
+                # On Unix, signal 0 checks if process exists without sending signal
+                os.kill(pid, 0)
+                return True
         except (OSError, ProcessLookupError):
             return False
 

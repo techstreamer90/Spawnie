@@ -90,11 +90,18 @@ def cmd_run(args):
 
     if args.mode == "async":
         # result is task_id
-        print(f"Task submitted: {result}")
-        print("Use 'spawnie status <task-id>' to check status")
+        if not args.dark:
+            print(f"Task submitted: {result}")
+            print("Use 'spawnie status <task-id>' to check status")
         return 0
 
     # result is Result object
+    if args.dark:
+        # Dark mode: only output the result, no status/metadata
+        if result.output:
+            print(result.output)
+        return 0 if result.succeeded else 1
+
     if args.json:
         print(json.dumps(result.to_dict(), indent=2, default=str))
     else:
@@ -589,6 +596,162 @@ def cmd_session_kill(args):
     return 0
 
 
+# =============================================================================
+# Workflows Library Commands
+# =============================================================================
+
+def get_workflows_library_dir() -> Path:
+    """Get the workflows library directory."""
+    return Path.home() / ".spawnie" / "workflows"
+
+
+def cmd_workflows(args):
+    """Manage the workflows library."""
+    library_dir = get_workflows_library_dir()
+
+    if args.action == "list":
+        if not library_dir.exists():
+            print("Workflows library not found.")
+            print(f"Create it at: {library_dir}")
+            return 0
+
+        workflows = list(library_dir.glob("*.json"))
+        if not workflows:
+            print("No workflows in library.")
+            print(f"Add JSON workflow files to: {library_dir}")
+            return 0
+
+        if args.json_output:
+            workflow_data = []
+            for wf_path in sorted(workflows):
+                try:
+                    with open(wf_path, "r") as f:
+                        data = json.load(f)
+                    workflow_data.append({
+                        "name": wf_path.stem,
+                        "path": str(wf_path),
+                        "description": data.get("description", ""),
+                        "steps": list(data.get("steps", {}).keys()),
+                    })
+                except Exception as e:
+                    workflow_data.append({
+                        "name": wf_path.stem,
+                        "path": str(wf_path),
+                        "error": str(e),
+                    })
+            print(json.dumps(workflow_data, indent=2))
+        else:
+            print(f"Workflows Library: {library_dir}")
+            print()
+            for wf_path in sorted(workflows):
+                try:
+                    with open(wf_path, "r") as f:
+                        data = json.load(f)
+                    name = wf_path.stem
+                    desc = data.get("description", "No description")
+                    steps = list(data.get("steps", {}).keys())
+                    print(f"  {name}")
+                    print(f"     {desc}")
+                    print(f"     Steps: {', '.join(steps)}")
+                    print()
+                except Exception as e:
+                    print(f"  {wf_path.stem} (error: {e})")
+                    print()
+        return 0
+
+    elif args.action == "run":
+        if not args.name:
+            print("Error: workflow name required")
+            print("Usage: spawnie workflows run <name>")
+            return 1
+
+        # Find workflow file
+        workflow_path = library_dir / f"{args.name}.json"
+        if not workflow_path.exists():
+            # Try exact path as fallback
+            workflow_path = Path(args.name)
+            if not workflow_path.exists():
+                print(f"Workflow not found: {args.name}")
+                print()
+                print("Available workflows:")
+                if library_dir.exists():
+                    for wf in library_dir.glob("*.json"):
+                        print(f"  {wf.stem}")
+                return 1
+
+        # Parse inputs
+        inputs = {}
+        if args.input:
+            for inp in args.input:
+                if "=" in inp:
+                    key, value = inp.split("=", 1)
+                    inputs[key] = value
+                else:
+                    print(f"Invalid input format: {inp} (expected key=value)")
+                    return 1
+
+        if args.inputs_json:
+            inputs.update(json.loads(args.inputs_json))
+
+        print(f"Running workflow: {workflow_path.stem}")
+        print(f"From: {workflow_path}")
+        print(f"Inputs: {inputs}")
+        print()
+
+        result = execute(
+            workflow_path,
+            inputs=inputs,
+            customer=args.customer,
+            timeout=args.timeout,
+        )
+
+        if args.json_output:
+            print(json.dumps(result.to_dict(), indent=2, default=str))
+        else:
+            print(f"Status: {result.status}")
+            print(f"Duration: {result.duration_seconds:.2f}s")
+            print()
+
+            if result.step_results:
+                print("Steps:")
+                for step_name, step_result in result.step_results.items():
+                    status = step_result.get("status", "unknown")
+                    print(f"  {step_name}: {status}")
+
+            if result.outputs:
+                print()
+                print("Outputs:")
+                for name, value in result.outputs.items():
+                    preview = str(value)[:100] + "..." if len(str(value)) > 100 else str(value)
+                    print(f"  {name}: {preview}")
+
+            if result.error:
+                print()
+                print(f"Error: {result.error}")
+
+        return 0 if result.status == "completed" else 1
+
+    elif args.action == "show":
+        if not args.name:
+            print("Error: workflow name required")
+            print("Usage: spawnie workflows show <name>")
+            return 1
+
+        workflow_path = library_dir / f"{args.name}.json"
+        if not workflow_path.exists():
+            print(f"Workflow not found: {args.name}")
+            return 1
+
+        with open(workflow_path, "r") as f:
+            data = json.load(f)
+        print(json.dumps(data, indent=2))
+        return 0
+
+    else:
+        print("Usage: spawnie workflows <list|run|show> [options]")
+        return 1
+
+
 def main():
     """Main entry point."""
     parser = argparse.ArgumentParser(
@@ -617,6 +780,11 @@ def main():
         choices=["normal", "extra-clean", "hypertask"],
         default="normal",
         help="Quality level: normal (no review), extra-clean (self-review), hypertask (dual review)"
+    )
+    run_parser.add_argument(
+        "--dark",
+        action="store_true",
+        help="Dark mode: suppress output, only return result (for subtask spawning)"
     )
 
     # workflow command
@@ -697,6 +865,20 @@ def main():
     session_kill_parser = subparsers.add_parser("session-kill", help="Kill a shell session")
     session_kill_parser.add_argument("session_id", help="Session ID to kill")
 
+    # ==========================================================================
+    # Workflows Library Commands
+    # ==========================================================================
+
+    # workflows command - manage workflows library
+    workflows_parser = subparsers.add_parser("workflows", help="Manage workflows library")
+    workflows_parser.add_argument("action", choices=["list", "run", "show"], help="Action to perform")
+    workflows_parser.add_argument("name", nargs="?", help="Workflow name (for run/show)")
+    workflows_parser.add_argument("-i", "--input", action="append", help="Input as key=value (for run)")
+    workflows_parser.add_argument("--inputs-json", help="Inputs as JSON string (for run)")
+    workflows_parser.add_argument("-c", "--customer", default="cli", help="Customer identifier (for run)")
+    workflows_parser.add_argument("--timeout", type=int, help="Workflow timeout (for run)")
+    workflows_parser.add_argument("--json", dest="json_output", action="store_true", help="Output as JSON")
+
     # ask command - ask question (used inside session)
     ask_parser = subparsers.add_parser("ask", help="Ask orchestrator a question (inside session)")
     ask_parser.add_argument("question", help="The question to ask")
@@ -740,6 +922,8 @@ def main():
         "ask": cmd_ask,
         "progress": cmd_progress,
         "done": cmd_done,
+        # Workflows library commands
+        "workflows": cmd_workflows,
     }
 
     return commands[args.command](args)

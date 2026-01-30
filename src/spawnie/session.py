@@ -253,15 +253,42 @@ class ShellSession:
         else:
             cmd_args = self._build_claude_args(agent_instructions, model)
 
-        self._process = subprocess.Popen(
-            cmd_args,
-            cwd=self.working_dir,
-            env=env,
-            stdin=subprocess.DEVNULL,  # Don't pipe stdin - can cause blocking
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-        )
+        try:
+            self._process = subprocess.Popen(
+                cmd_args,
+                cwd=self.working_dir,
+                env=env,
+                stdin=subprocess.DEVNULL,  # Don't pipe stdin - can cause blocking
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+            )
+        except FileNotFoundError as e:
+            self._status.status = "error"
+            self._status.error = f"CLI not found: {cmd_args[0]}"
+            self._save_status()
+            if self._tracker and self._task_id:
+                self._tracker.fail_task(self._task_id, f"CLI not found: {cmd_args[0]}")
+            raise RuntimeError(f"Failed to start session: {e}") from e
+        except OSError as e:
+            self._status.status = "error"
+            self._status.error = f"Failed to start process: {e}"
+            self._save_status()
+            if self._tracker and self._task_id:
+                self._tracker.fail_task(self._task_id, str(e))
+            raise RuntimeError(f"Failed to start session: {e}") from e
+
+        # Verify process actually started
+        if self._process.poll() is not None:
+            # Process already exited
+            self._status.status = "error"
+            self._status.error = f"Process exited immediately with code {self._process.returncode}"
+            self._save_status()
+            if self._tracker and self._task_id:
+                self._tracker.fail_task(self._task_id, self._status.error)
+            raise RuntimeError(self._status.error)
 
         self._status.status = "running"
         self._status.pid = self._process.pid

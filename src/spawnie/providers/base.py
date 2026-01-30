@@ -65,6 +65,8 @@ class CLIProvider(ABC):
                 capture_output=True,
                 text=True,
                 timeout=self.timeout,
+                encoding="utf-8",
+                errors="replace",
             )
             output = result.stdout
             if result.stderr:
@@ -94,6 +96,8 @@ class CLIProvider(ABC):
                     capture_output=True,
                     text=True,
                     timeout=self.timeout,
+                    encoding="utf-8",
+                    errors="replace",
                 )
             output = result.stdout
             if result.stderr:

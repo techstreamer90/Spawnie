@@ -7,6 +7,7 @@ Customers (like BAM) define workflows in JSON, Spawnie executes them.
 import json
 import re
 import uuid
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -379,9 +380,10 @@ class WorkflowExecutor:
             execution_order = definition.get_execution_order()
 
             for parallel_group in execution_order:
-                # For now, execute sequentially within groups
-                # TODO: Add actual parallel execution
-                for step_name in parallel_group:
+                # Execute steps in parallel within each group
+                if len(parallel_group) == 1:
+                    # Single step - run directly
+                    step_name = parallel_group[0]
                     step = definition.steps[step_name]
 
                     # Check condition
@@ -392,24 +394,49 @@ class WorkflowExecutor:
                             step_results[step_name] = {"status": "skipped", "reason": "condition false"}
                             continue
 
-                    # Execute step with retries
                     result = self._execute_step(
                         workflow_id=workflow_id,
                         step=step,
                         context=context,
                         retries=step.retries,
                     )
-
                     step_results[step_name] = result
 
                     if result["status"] == "failed":
                         raise RuntimeError(f"Step '{step_name}' failed: {result.get('error')}")
 
-                    # Store output
-                    if step.output:
-                        context.step_outputs[step_name] = result["output"]
-                    else:
-                        context.step_outputs[step_name] = result["output"]
+                    context.step_outputs[step_name] = result["output"]
+                else:
+                    # Multiple steps - run in parallel
+                    def execute_parallel_step(step_name: str):
+                        step = definition.steps[step_name]
+
+                        # Check condition
+                        if step.condition:
+                            condition_result = self._evaluate_condition(step.condition, context)
+                            if not condition_result:
+                                self.tracker.complete_step(workflow_id, step_name)
+                                return step_name, {"status": "skipped", "reason": "condition false"}
+
+                        result = self._execute_step(
+                            workflow_id=workflow_id,
+                            step=step,
+                            context=context,
+                            retries=step.retries,
+                        )
+                        return step_name, result
+
+                    with ThreadPoolExecutor(max_workers=len(parallel_group)) as executor:
+                        futures = {executor.submit(execute_parallel_step, name): name for name in parallel_group}
+
+                        for future in as_completed(futures):
+                            step_name, result = future.result()
+                            step_results[step_name] = result
+
+                            if result["status"] == "failed":
+                                raise RuntimeError(f"Step '{step_name}' failed: {result.get('error')}")
+
+                            context.step_outputs[step_name] = result.get("output", "")
 
             # Build outputs
             outputs = {}
@@ -513,7 +540,7 @@ class WorkflowExecutor:
                             model_id=route.model_id,
                         )
 
-                    self.tracker.complete_task(task_id, output[:200] if output else None)
+                    self.tracker.complete_task(task_id, output)
                     self.tracker.complete_step(workflow_id, step.name)
                     return {
                         "status": "completed",
