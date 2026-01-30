@@ -438,6 +438,9 @@ def workflow_status(workflow_id: str | None = None) -> dict:
 
     tracker = get_tracker()
 
+    # Clean up orphaned/timed-out tasks before reporting status
+    tracker.check_timeouts()
+
     if workflow_id:
         wf = tracker.get_workflow(workflow_id)
         if wf:
@@ -461,6 +464,9 @@ def kill(target_id: str) -> dict:
     from .tracker import get_tracker
 
     tracker = get_tracker()
+
+    # Clean up orphaned tasks first (target might already be dead)
+    tracker.check_timeouts()
 
     if target_id.startswith("wf-"):
         tracker.kill_workflow(target_id)
