@@ -251,4 +251,4 @@ spawnie detect copilot        # Check Copilot CLI availability
 
 ## License
 
-MIT
+All Rights Reserved. See [LICENSE](LICENSE) for details.
