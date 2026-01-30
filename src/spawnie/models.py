@@ -15,6 +15,81 @@ QUALITY_DESCRIPTIONS = {
     "hypertask": "Dual review - self-review + external reviewer for highest quality",
 }
 
+# Review prompt templates based on benchmark findings
+SELF_REVIEW_PROMPT = """You just completed a task. Before finalizing, critically review your own work:
+
+ORIGINAL TASK: {original_prompt}
+
+YOUR RESPONSE: {output}
+
+SELF-REVIEW CHECKLIST:
+1. What did you FORGET to consider? (security? cost? edge cases? alternatives?)
+2. Are there CONTRADICTIONS in your response?
+3. What ASSUMPTIONS are you making that might be wrong?
+4. What is your CONFIDENCE level (Low/Medium/High) and why?
+
+SOURCE VERIFICATION (CRITICAL):
+If your response makes claims about code, files, or implementations:
+- You MUST read the actual source files before making claims
+- Do NOT speculate about what code does - READ IT
+- Do NOT estimate complexity without seeing the actual code
+- Any claim about a specific file/line MUST be verified by reading it
+
+Provide an IMPROVED response that:
+- Addresses any gaps you identified
+- Acknowledges trade-offs
+- States your confidence level
+- Is clear about limitations
+- VERIFIES all code-related claims against actual source
+
+Your improved response:"""
+
+EXTERNAL_REVIEW_PROMPT = """You are a SKEPTICAL SENIOR ARCHITECT reviewing work from another team member.
+
+ORIGINAL TASK: {original_prompt}
+
+THEIR RESPONSE (after self-review): {output}
+
+Your job is to be ADVERSARIAL but constructive:
+1. Find CONTRADICTIONS or inconsistencies
+2. Identify ARCHITECTURAL RISKS not addressed
+3. Challenge UNJUSTIFIED decisions
+4. Rate overall confidence (Low/Medium/High)
+
+SOURCE VERIFICATION (CRITICAL):
+Before critiquing, you MUST verify claims against actual code:
+- If the response mentions specific files/lines, READ THEM to verify
+- If complexity is estimated, CHECK the actual implementation
+- If risks are claimed, CONFIRM they exist in the source
+- Do NOT accept or reject claims without reading the relevant code
+- Call out any unverified speculation in the original response
+
+Be critical. Assume something is wrong. Find it. VERIFY with source code.
+
+Your critique (max 300 words):"""
+
+FINAL_SYNTHESIS_PROMPT = """You need to finalize your response incorporating review feedback.
+
+ORIGINAL TASK: {original_prompt}
+
+YOUR DRAFT (after self-review): {self_reviewed_output}
+
+EXTERNAL REVIEWER CRITIQUE: {external_review}
+
+Create a FINAL response that:
+1. Addresses the reviewer's concerns
+2. Acknowledges remaining trade-offs
+3. States your confidence level with justification
+4. Is honest about limitations
+
+VERIFICATION REQUIREMENT:
+- All claims about code MUST be verified by reading actual source files
+- If you haven't read the code, say "UNVERIFIED" next to the claim
+- Do NOT present speculation as fact
+- Complexity estimates require reading the actual implementation
+
+Your final response:"""
+
 
 @dataclass
 class Task:
