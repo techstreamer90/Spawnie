@@ -1,0 +1,73 @@
+{
+  "source_id": "spawnie-classes",
+  "updated_at": "2026-01-30T23:00:00Z",
+  "nodes": {
+    "cls-tracker": {
+      "module": "tracker.py",
+      "description": "Central tracker for all Spawnie tasks and workflows. Singleton via get_tracker(). Thread-safe with RLock. Persists state to JSON, archives to history.",
+      "methods": [
+        "start_workflow", "complete_workflow", "fail_workflow",
+        "start_task", "complete_task", "fail_task", "kill_task",
+        "log_tool_call", "set_task_metadata", "get_task_output",
+        "check_timeouts", "start_monitor", "stop_monitor",
+        "_save_task_output", "_archive_workflow", "_archive_task",
+        "_is_process_alive", "_cleanup_finished"
+      ],
+      "attributes": ["tracker_path", "history_dir", "outputs_dir", "workflows", "tasks", "alerts", "stats", "limits"]
+    },
+    "cls-workflow-executor": {
+      "module": "workflow.py",
+      "description": "Executes workflow definitions. Resolves step dependencies, runs parallel groups via ThreadPoolExecutor, tracks progress in Tracker.",
+      "methods": ["execute", "_execute_step", "_apply_step_review", "_evaluate_condition"],
+      "attributes": ["tracker", "registry"]
+    },
+    "cls-workflow-def": {
+      "module": "workflow.py",
+      "description": "Parsed workflow definition from JSON. Contains steps, inputs, outputs, timeout. Computes execution order via topological sort.",
+      "methods": ["from_file", "from_dict", "get_execution_order", "to_dict"],
+      "attributes": ["name", "description", "steps", "inputs", "outputs", "timeout"]
+    },
+    "cls-shell-session": {
+      "module": "session.py",
+      "description": "Interactive agent session with bidirectional communication. Spawns CLI subprocess, monitors for events (questions, progress, done).",
+      "methods": ["start", "events", "respond", "kill", "_build_claude_args", "_build_agent_instructions"],
+      "attributes": ["session_id", "working_dir", "status", "_process", "_tracker"]
+    },
+    "cls-registry": {
+      "module": "registry.py",
+      "description": "Model registry mapping model names to provider chains. Handles availability detection and fallback routing.",
+      "methods": ["get_route", "list_models", "add_model", "is_available", "save", "load"],
+      "attributes": ["models", "providers", "config_path"]
+    },
+    "cls-cli-provider": {
+      "module": "providers/base.py",
+      "description": "Abstract base class for CLI providers. Subclasses implement specific CLI tools (Claude, Copilot).",
+      "methods": ["execute", "is_available", "_execute_inline", "_execute_with_stdin"],
+      "attributes": ["timeout", "max_inline_prompt_length"]
+    },
+    "cls-claude-provider": {
+      "module": "providers/claude.py",
+      "description": "Provider for Claude CLI. Constructs claude command with --print, model selection, and optional flags.",
+      "methods": ["execute", "is_available", "_build_command"],
+      "attributes": ["model_id", "timeout"]
+    },
+    "cls-monitor-app": {
+      "module": "monitor.py",
+      "description": "Textual TUI application for real-time monitoring. Shows workflows, tasks, alerts, stats. Auto-refreshes.",
+      "methods": ["compose", "refresh_data", "action_refresh", "action_kill", "action_screenshot"],
+      "attributes": ["tracker", "refresh_interval", "last_update"]
+    },
+    "cls-finding": {
+      "module": "findings.py",
+      "description": "Structured finding from code analysis. Contains evidence, severity, confidence, suggested fixes.",
+      "methods": ["to_dict", "from_dict"],
+      "attributes": ["id", "title", "description", "category", "severity", "confidence", "evidence", "suggested_fixes", "verified"]
+    },
+    "cls-findings-report": {
+      "module": "findings.py",
+      "description": "Collection of findings with statistics. Can filter by severity, category, compute stats.",
+      "methods": ["to_dict", "from_dict", "to_json", "from_json", "get_by_severity", "get_actionable", "compute_stats"],
+      "attributes": ["workflow_id", "findings", "summary", "stats"]
+    }
+  }
+}

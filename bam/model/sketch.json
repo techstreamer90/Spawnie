@@ -1,0 +1,547 @@
+{
+  "schema_version": "2.0",
+  "project": "spawnie-model",
+  "updated_at": "2026-01-31T00:30:00Z",
+  "source_root": "..",
+
+  "verification": {
+    "description": "Reality is part of this model. Each node has a source reference with file path, line number, and hash. When reality changes, the hash mismatches signal drift.",
+    "last_verified": "2026-01-31T00:30:00Z",
+    "verification_command": "sha256sum"
+  },
+
+  "node_types": {
+    "Module": {
+      "description": "Python module (file)",
+      "properties": ["path", "description", "loc", "public_api"]
+    },
+    "Class": {
+      "description": "Python class",
+      "properties": ["module", "description", "methods", "attributes"]
+    },
+    "Function": {
+      "description": "Standalone function",
+      "properties": ["module", "description", "parameters", "returns"]
+    },
+    "Dataclass": {
+      "description": "Data structure (dataclass/TypedDict)",
+      "properties": ["module", "fields", "description"]
+    },
+    "CLICommand": {
+      "description": "CLI command exposed by spawnie",
+      "properties": ["name", "description", "arguments", "handler"]
+    },
+    "Concept": {
+      "description": "Architectural concept or pattern",
+      "properties": ["description", "rationale"]
+    }
+  },
+
+  "edge_types": {
+    "IMPORTS": {
+      "description": "Module imports another module",
+      "from_types": ["Module"],
+      "to_types": ["Module"]
+    },
+    "DEFINES": {
+      "description": "Module defines a class/function/dataclass",
+      "from_types": ["Module"],
+      "to_types": ["Class", "Function", "Dataclass"]
+    },
+    "INHERITS": {
+      "description": "Class inherits from another",
+      "from_types": ["Class"],
+      "to_types": ["Class"]
+    },
+    "CALLS": {
+      "description": "Function/method calls another",
+      "from_types": ["Function", "Class"],
+      "to_types": ["Function", "Class"]
+    },
+    "USES": {
+      "description": "Class uses another class",
+      "from_types": ["Class"],
+      "to_types": ["Class", "Dataclass"]
+    },
+    "IMPLEMENTS": {
+      "description": "CLI command implemented by handler",
+      "from_types": ["CLICommand"],
+      "to_types": ["Function"]
+    },
+    "EMBODIES": {
+      "description": "Code embodies an architectural concept",
+      "from_types": ["Module", "Class"],
+      "to_types": ["Concept"]
+    }
+  },
+
+  "nodes": [
+    {
+      "id": "mod-api",
+      "type": "Module",
+      "label": "api.py",
+      "source": {
+        "file": "src/spawnie/api.py",
+        "hash": "c32e29155818e88c451303e5280e94efea730fcc05879028d110cda698cf6d13"
+      }
+    },
+    {
+      "id": "mod-tracker",
+      "type": "Module",
+      "label": "tracker.py",
+      "source": {
+        "file": "src/spawnie/tracker.py",
+        "hash": "c4561408b1272866a4f8423d66b811cb7cd5575e59e90397d8f42adef3f0f165"
+      }
+    },
+    {
+      "id": "mod-workflow",
+      "type": "Module",
+      "label": "workflow.py",
+      "source": {
+        "file": "src/spawnie/workflow.py",
+        "hash": "5d140e997b6a99686684d1126488d107e1d3cc656fa58d9271c9b9fb925986b7"
+      }
+    },
+    {
+      "id": "mod-registry",
+      "type": "Module",
+      "label": "registry.py",
+      "source": {
+        "file": "src/spawnie/registry.py",
+        "hash": "b35500914044aa8480678acb55160842f38bea1085922fc4446130597fe14aa2"
+      }
+    },
+    {
+      "id": "mod-session",
+      "type": "Module",
+      "label": "session.py",
+      "source": {
+        "file": "src/spawnie/session.py",
+        "hash": "59138744d65b484a9803a52ee83e9573ad7967ba65d7bfec2a55111574cf30bb"
+      }
+    },
+    {
+      "id": "mod-monitor",
+      "type": "Module",
+      "label": "monitor.py",
+      "source": {
+        "file": "src/spawnie/monitor.py",
+        "hash": "519004d199f366e8f6103debc0c0d26f61da0825277c0231786df43ac127ddc4"
+      }
+    },
+    {
+      "id": "mod-main",
+      "type": "Module",
+      "label": "__main__.py",
+      "source": {
+        "file": "src/spawnie/__main__.py",
+        "hash": "918077c2aca6f301aa9d159d4d539cc95286b61488d1226c9b942aec6992bc9c"
+      }
+    },
+    {
+      "id": "mod-providers-base",
+      "type": "Module",
+      "label": "providers/base.py",
+      "source": {
+        "file": "src/spawnie/providers/base.py",
+        "hash": "1580f38cdcf80b33679c2825202190dbac37cd73091415d186c3318ebe9c1528"
+      }
+    },
+    {
+      "id": "mod-providers-claude",
+      "type": "Module",
+      "label": "providers/claude.py",
+      "source": {
+        "file": "src/spawnie/providers/claude.py",
+        "hash": "a3a3a2c0ff7ae0b2968681ced4a9bc0f5414085a6640035fde766f99cdaa0541"
+      }
+    },
+    {
+      "id": "mod-findings",
+      "type": "Module",
+      "label": "findings.py",
+      "source": {
+        "file": "src/spawnie/findings.py",
+        "hash": "ed654307ea5f63bc0052e4f67a5c87533eef51578ad34e565a7cfef7ba5e4238"
+      }
+    },
+
+    {
+      "id": "cls-tracker",
+      "type": "Class",
+      "label": "Tracker",
+      "source": {
+        "file": "src/spawnie/tracker.py",
+        "line": 215,
+        "hash": "c4561408b1272866a4f8423d66b811cb7cd5575e59e90397d8f42adef3f0f165"
+      }
+    },
+    {
+      "id": "cls-workflow-executor",
+      "type": "Class",
+      "label": "WorkflowExecutor",
+      "source": {
+        "file": "src/spawnie/workflow.py",
+        "line": 328,
+        "hash": "5d140e997b6a99686684d1126488d107e1d3cc656fa58d9271c9b9fb925986b7"
+      }
+    },
+    {
+      "id": "cls-workflow-def",
+      "type": "Class",
+      "label": "WorkflowDefinition",
+      "source": {
+        "file": "src/spawnie/workflow.py",
+        "line": 137,
+        "hash": "5d140e997b6a99686684d1126488d107e1d3cc656fa58d9271c9b9fb925986b7"
+      }
+    },
+    {
+      "id": "cls-shell-session",
+      "type": "Class",
+      "label": "ShellSession",
+      "source": {
+        "file": "src/spawnie/session.py",
+        "line": 143,
+        "hash": "59138744d65b484a9803a52ee83e9573ad7967ba65d7bfec2a55111574cf30bb"
+      }
+    },
+    {
+      "id": "cls-registry",
+      "type": "Class",
+      "label": "ModelRegistry",
+      "source": {
+        "file": "src/spawnie/registry.py",
+        "line": 102,
+        "hash": "b35500914044aa8480678acb55160842f38bea1085922fc4446130597fe14aa2"
+      }
+    },
+    {
+      "id": "cls-cli-provider",
+      "type": "Class",
+      "label": "CLIProvider",
+      "source": {
+        "file": "src/spawnie/providers/base.py",
+        "line": 14,
+        "hash": "1580f38cdcf80b33679c2825202190dbac37cd73091415d186c3318ebe9c1528"
+      }
+    },
+    {
+      "id": "cls-claude-provider",
+      "type": "Class",
+      "label": "ClaudeCLIProvider",
+      "source": {
+        "file": "src/spawnie/providers/claude.py",
+        "line": 9,
+        "hash": "a3a3a2c0ff7ae0b2968681ced4a9bc0f5414085a6640035fde766f99cdaa0541"
+      }
+    },
+    {
+      "id": "cls-monitor-app",
+      "type": "Class",
+      "label": "SpawnieMonitor",
+      "source": {
+        "file": "src/spawnie/monitor.py",
+        "line": 184,
+        "hash": "519004d199f366e8f6103debc0c0d26f61da0825277c0231786df43ac127ddc4"
+      }
+    },
+    {
+      "id": "cls-finding",
+      "type": "Class",
+      "label": "Finding",
+      "source": {
+        "file": "src/spawnie/findings.py",
+        "line": 104,
+        "hash": "ed654307ea5f63bc0052e4f67a5c87533eef51578ad34e565a7cfef7ba5e4238"
+      }
+    },
+    {
+      "id": "cls-findings-report",
+      "type": "Class",
+      "label": "FindingsReport",
+      "source": {
+        "file": "src/spawnie/findings.py",
+        "line": 146,
+        "hash": "ed654307ea5f63bc0052e4f67a5c87533eef51578ad34e565a7cfef7ba5e4238"
+      }
+    },
+
+    {
+      "id": "dc-task-state",
+      "type": "Dataclass",
+      "label": "TaskState",
+      "source": {
+        "file": "src/spawnie/tracker.py",
+        "line": 24,
+        "hash": "c4561408b1272866a4f8423d66b811cb7cd5575e59e90397d8f42adef3f0f165"
+      }
+    },
+    {
+      "id": "dc-workflow-state",
+      "type": "Dataclass",
+      "label": "WorkflowState",
+      "source": {
+        "file": "src/spawnie/tracker.py",
+        "line": 124,
+        "hash": "c4561408b1272866a4f8423d66b811cb7cd5575e59e90397d8f42adef3f0f165"
+      }
+    },
+    {
+      "id": "dc-step-state",
+      "type": "Dataclass",
+      "label": "StepState",
+      "source": {
+        "file": "src/spawnie/tracker.py",
+        "line": 89,
+        "hash": "c4561408b1272866a4f8423d66b811cb7cd5575e59e90397d8f42adef3f0f165"
+      }
+    },
+    {
+      "id": "dc-step-definition",
+      "type": "Dataclass",
+      "label": "StepDefinition",
+      "source": {
+        "file": "src/spawnie/workflow.py",
+        "line": 109,
+        "hash": "5d140e997b6a99686684d1126488d107e1d3cc656fa58d9271c9b9fb925986b7"
+      }
+    },
+    {
+      "id": "dc-workflow-result",
+      "type": "Dataclass",
+      "label": "WorkflowResult",
+      "source": {
+        "file": "src/spawnie/workflow.py",
+        "line": 302,
+        "hash": "5d140e997b6a99686684d1126488d107e1d3cc656fa58d9271c9b9fb925986b7"
+      }
+    },
+    {
+      "id": "dc-code-reference",
+      "type": "Dataclass",
+      "label": "CodeReference",
+      "source": {
+        "file": "src/spawnie/findings.py",
+        "line": 31,
+        "hash": "ed654307ea5f63bc0052e4f67a5c87533eef51578ad34e565a7cfef7ba5e4238"
+      }
+    },
+    {
+      "id": "dc-evidence",
+      "type": "Dataclass",
+      "label": "Evidence",
+      "source": {
+        "file": "src/spawnie/findings.py",
+        "line": 57,
+        "hash": "ed654307ea5f63bc0052e4f67a5c87533eef51578ad34e565a7cfef7ba5e4238"
+      }
+    },
+    {
+      "id": "dc-suggested-fix",
+      "type": "Dataclass",
+      "label": "SuggestedFix",
+      "source": {
+        "file": "src/spawnie/findings.py",
+        "line": 83,
+        "hash": "ed654307ea5f63bc0052e4f67a5c87533eef51578ad34e565a7cfef7ba5e4238"
+      }
+    },
+
+    {
+      "id": "fn-run",
+      "type": "Function",
+      "label": "run()",
+      "source": {
+        "file": "src/spawnie/api.py",
+        "line": 29,
+        "hash": "c32e29155818e88c451303e5280e94efea730fcc05879028d110cda698cf6d13"
+      }
+    },
+    {
+      "id": "fn-execute",
+      "type": "Function",
+      "label": "execute()",
+      "source": {
+        "file": "src/spawnie/api.py",
+        "line": 365,
+        "hash": "c32e29155818e88c451303e5280e94efea730fcc05879028d110cda698cf6d13"
+      }
+    },
+    {
+      "id": "fn-spawn",
+      "type": "Function",
+      "label": "spawn()",
+      "source": {
+        "file": "src/spawnie/api.py",
+        "line": 158,
+        "hash": "c32e29155818e88c451303e5280e94efea730fcc05879028d110cda698cf6d13"
+      }
+    },
+    {
+      "id": "fn-get-tracker",
+      "type": "Function",
+      "label": "get_tracker()",
+      "source": {
+        "file": "src/spawnie/tracker.py",
+        "line": 1050,
+        "hash": "c4561408b1272866a4f8423d66b811cb7cd5575e59e90397d8f42adef3f0f165"
+      }
+    },
+    {
+      "id": "fn-get-registry",
+      "type": "Function",
+      "label": "get_registry()",
+      "source": {
+        "file": "src/spawnie/registry.py",
+        "line": 366,
+        "hash": "b35500914044aa8480678acb55160842f38bea1085922fc4446130597fe14aa2"
+      }
+    },
+    {
+      "id": "fn-run-monitor",
+      "type": "Function",
+      "label": "run_monitor()",
+      "source": {
+        "file": "src/spawnie/monitor.py",
+        "line": 354,
+        "hash": "519004d199f366e8f6103debc0c0d26f61da0825277c0231786df43ac127ddc4"
+      }
+    },
+
+    {
+      "id": "cli-run",
+      "type": "CLICommand",
+      "label": "spawnie run",
+      "source": {
+        "file": "src/spawnie/__main__.py",
+        "line": 80,
+        "hash": "918077c2aca6f301aa9d159d4d539cc95286b61488d1226c9b942aec6992bc9c"
+      }
+    },
+    {
+      "id": "cli-workflow",
+      "type": "CLICommand",
+      "label": "spawnie workflow",
+      "source": {
+        "file": "src/spawnie/__main__.py",
+        "line": 122,
+        "hash": "918077c2aca6f301aa9d159d4d539cc95286b61488d1226c9b942aec6992bc9c"
+      }
+    },
+    {
+      "id": "cli-workflows",
+      "type": "CLICommand",
+      "label": "spawnie workflows",
+      "source": {
+        "file": "src/spawnie/__main__.py",
+        "line": 608,
+        "hash": "918077c2aca6f301aa9d159d4d539cc95286b61488d1226c9b942aec6992bc9c"
+      }
+    },
+    {
+      "id": "cli-monitor",
+      "type": "CLICommand",
+      "label": "spawnie monitor",
+      "source": {
+        "file": "src/spawnie/__main__.py",
+        "line": 380,
+        "hash": "918077c2aca6f301aa9d159d4d539cc95286b61488d1226c9b942aec6992bc9c"
+      }
+    },
+    {
+      "id": "cli-status",
+      "type": "CLICommand",
+      "label": "spawnie status",
+      "source": {
+        "file": "src/spawnie/__main__.py",
+        "line": 183,
+        "hash": "918077c2aca6f301aa9d159d4d539cc95286b61488d1226c9b942aec6992bc9c"
+      }
+    },
+    {
+      "id": "cli-kill",
+      "type": "CLICommand",
+      "label": "spawnie kill",
+      "source": {
+        "file": "src/spawnie/__main__.py",
+        "line": 267,
+        "hash": "918077c2aca6f301aa9d159d4d539cc95286b61488d1226c9b942aec6992bc9c"
+      }
+    },
+
+    {"id": "concept-task-as-workflow", "type": "Concept", "label": "Tasks as Single-Step Workflows"},
+    {"id": "concept-model-routing", "type": "Concept", "label": "Model Routing"},
+    {"id": "concept-parallel-exec", "type": "Concept", "label": "Parallel Step Execution"},
+    {"id": "concept-orphan-detection", "type": "Concept", "label": "Orphan Detection"},
+    {"id": "concept-quality-levels", "type": "Concept", "label": "Quality Levels (Review Strategies)"}
+  ],
+
+  "edges": [
+    {"type": "IMPORTS", "from": "mod-api", "to": "mod-workflow"},
+    {"type": "IMPORTS", "from": "mod-api", "to": "mod-tracker"},
+    {"type": "IMPORTS", "from": "mod-workflow", "to": "mod-tracker"},
+    {"type": "IMPORTS", "from": "mod-workflow", "to": "mod-registry"},
+    {"type": "IMPORTS", "from": "mod-workflow", "to": "mod-providers-base"},
+    {"type": "IMPORTS", "from": "mod-session", "to": "mod-tracker"},
+    {"type": "IMPORTS", "from": "mod-monitor", "to": "mod-tracker"},
+    {"type": "IMPORTS", "from": "mod-main", "to": "mod-api"},
+    {"type": "IMPORTS", "from": "mod-providers-claude", "to": "mod-providers-base"},
+
+    {"type": "DEFINES", "from": "mod-tracker", "to": "cls-tracker"},
+    {"type": "DEFINES", "from": "mod-tracker", "to": "dc-task-state"},
+    {"type": "DEFINES", "from": "mod-tracker", "to": "dc-workflow-state"},
+    {"type": "DEFINES", "from": "mod-tracker", "to": "dc-step-state"},
+    {"type": "DEFINES", "from": "mod-tracker", "to": "fn-get-tracker"},
+    {"type": "DEFINES", "from": "mod-workflow", "to": "cls-workflow-executor"},
+    {"type": "DEFINES", "from": "mod-workflow", "to": "cls-workflow-def"},
+    {"type": "DEFINES", "from": "mod-workflow", "to": "dc-step-definition"},
+    {"type": "DEFINES", "from": "mod-workflow", "to": "dc-workflow-result"},
+    {"type": "DEFINES", "from": "mod-session", "to": "cls-shell-session"},
+    {"type": "DEFINES", "from": "mod-registry", "to": "cls-registry"},
+    {"type": "DEFINES", "from": "mod-registry", "to": "fn-get-registry"},
+    {"type": "DEFINES", "from": "mod-providers-base", "to": "cls-cli-provider"},
+    {"type": "DEFINES", "from": "mod-providers-claude", "to": "cls-claude-provider"},
+    {"type": "DEFINES", "from": "mod-monitor", "to": "cls-monitor-app"},
+    {"type": "DEFINES", "from": "mod-monitor", "to": "fn-run-monitor"},
+    {"type": "DEFINES", "from": "mod-api", "to": "fn-run"},
+    {"type": "DEFINES", "from": "mod-api", "to": "fn-execute"},
+    {"type": "DEFINES", "from": "mod-api", "to": "fn-spawn"},
+    {"type": "DEFINES", "from": "mod-findings", "to": "cls-finding"},
+    {"type": "DEFINES", "from": "mod-findings", "to": "cls-findings-report"},
+    {"type": "DEFINES", "from": "mod-findings", "to": "dc-code-reference"},
+    {"type": "DEFINES", "from": "mod-findings", "to": "dc-evidence"},
+    {"type": "DEFINES", "from": "mod-findings", "to": "dc-suggested-fix"},
+
+    {"type": "INHERITS", "from": "cls-claude-provider", "to": "cls-cli-provider"},
+
+    {"type": "USES", "from": "cls-workflow-executor", "to": "cls-tracker"},
+    {"type": "USES", "from": "cls-workflow-executor", "to": "dc-task-state"},
+    {"type": "USES", "from": "cls-workflow-executor", "to": "dc-workflow-state"},
+    {"type": "USES", "from": "cls-workflow-executor", "to": "dc-step-definition"},
+    {"type": "USES", "from": "cls-shell-session", "to": "cls-tracker"},
+    {"type": "USES", "from": "cls-monitor-app", "to": "cls-tracker"},
+    {"type": "USES", "from": "cls-tracker", "to": "dc-task-state"},
+    {"type": "USES", "from": "cls-tracker", "to": "dc-workflow-state"},
+    {"type": "USES", "from": "cls-tracker", "to": "dc-step-state"},
+    {"type": "USES", "from": "cls-findings-report", "to": "cls-finding"},
+    {"type": "USES", "from": "cls-finding", "to": "dc-evidence"},
+    {"type": "USES", "from": "cls-finding", "to": "dc-suggested-fix"},
+    {"type": "USES", "from": "dc-evidence", "to": "dc-code-reference"},
+
+    {"type": "CALLS", "from": "fn-run", "to": "cls-workflow-executor"},
+    {"type": "CALLS", "from": "fn-execute", "to": "cls-workflow-executor"},
+    {"type": "CALLS", "from": "cls-workflow-executor", "to": "cls-cli-provider"},
+
+    {"type": "IMPLEMENTS", "from": "cli-run", "to": "fn-run"},
+    {"type": "IMPLEMENTS", "from": "cli-workflow", "to": "fn-execute"},
+    {"type": "IMPLEMENTS", "from": "cli-monitor", "to": "fn-run-monitor"},
+
+    {"type": "EMBODIES", "from": "mod-api", "to": "concept-task-as-workflow"},
+    {"type": "EMBODIES", "from": "mod-registry", "to": "concept-model-routing"},
+    {"type": "EMBODIES", "from": "mod-workflow", "to": "concept-parallel-exec"},
+    {"type": "EMBODIES", "from": "mod-tracker", "to": "concept-orphan-detection"},
+    {"type": "EMBODIES", "from": "mod-workflow", "to": "concept-quality-levels"}
+  ]
+}

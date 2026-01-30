@@ -1,0 +1,31 @@
+{
+  "source_id": "spawnie-concepts",
+  "updated_at": "2026-01-30T23:00:00Z",
+  "nodes": {
+    "concept-task-as-workflow": {
+      "description": "Tasks are unified as single-step workflows. The run() function creates a WorkflowDefinition with one step and executes it. This simplifies tracking - everything is a workflow.",
+      "rationale": "Eliminates duplication between task and workflow code paths. Single tracking mechanism. Consistent behavior for single prompts and multi-step workflows.",
+      "implementation": "api.py run() creates WorkflowDefinition with single 'main' step, calls WorkflowExecutor.execute()"
+    },
+    "concept-model-routing": {
+      "description": "Model names (e.g., 'claude-sonnet') are abstract. The registry maps them to concrete providers (Claude CLI, Copilot CLI, API) with priority ordering and fallback.",
+      "rationale": "Decouples user intent from provider availability. Enables cost optimization (CLI subscriptions before API). Graceful degradation when providers unavailable.",
+      "implementation": "ModelRegistry maintains routes per model. get_route() returns first available provider. Availability cached with TTL."
+    },
+    "concept-parallel-exec": {
+      "description": "Workflow steps without dependencies run in parallel. Execution order computed via topological sort, yielding groups of parallelizable steps.",
+      "rationale": "Significant speedup for workflows with independent steps. CPU-bound LLM calls benefit from concurrency.",
+      "implementation": "WorkflowDefinition.get_execution_order() returns list of parallel groups. WorkflowExecutor uses ThreadPoolExecutor for groups > 1 step."
+    },
+    "concept-orphan-detection": {
+      "description": "Tasks record their process PID. On reload, Tracker checks if PIDs are still alive. Dead PIDs indicate orphaned tasks (process crashed/killed).",
+      "rationale": "Prevents ghost tasks showing as 'running' forever. Automatic cleanup without manual intervention. Accurate status reporting.",
+      "implementation": "TaskState has pid field. Tracker._is_process_alive() uses platform-specific check. check_timeouts() cleans orphans."
+    },
+    "concept-quality-levels": {
+      "description": "Three quality levels for outputs: normal (single pass), extra-clean (self-review), hypertask (dual expert review). Higher levels catch more errors but cost more.",
+      "rationale": "Trade-off between cost/speed and quality. Quick exploration uses normal. Production code uses extra-clean. Critical decisions use hypertask.",
+      "implementation": "WorkflowExecutor._apply_step_review() adds review passes based on step.quality. Review prompts in models.py."
+    }
+  }
+}

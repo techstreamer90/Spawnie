@@ -1,0 +1,77 @@
+{
+  "source_id": "spawnie-cli",
+  "updated_at": "2026-01-30T23:00:00Z",
+  "nodes": {
+    "cli-run": {
+      "name": "run",
+      "description": "Execute a single prompt. Returns result or task ID (async mode).",
+      "arguments": {
+        "prompt": "The prompt to execute (required)",
+        "-m, --model": "Model to use (default: claude-sonnet)",
+        "--mode": "blocking|async|output (default: blocking)",
+        "--timeout": "Timeout in seconds (default: 300)",
+        "-q, --quality": "normal|extra-clean|hypertask (default: normal)",
+        "--dark": "Suppress output, return result only",
+        "--json": "Output as JSON"
+      },
+      "handler": "cmd_run"
+    },
+    "cli-workflow": {
+      "name": "workflow",
+      "description": "Execute a workflow from a JSON file.",
+      "arguments": {
+        "workflow": "Path to workflow JSON file (required)",
+        "-i, --input": "Input as key=value (repeatable)",
+        "--inputs-json": "Inputs as JSON string",
+        "-c, --customer": "Customer identifier (default: cli)",
+        "--timeout": "Workflow timeout in seconds",
+        "--json": "Output as JSON"
+      },
+      "handler": "cmd_workflow"
+    },
+    "cli-workflows": {
+      "name": "workflows",
+      "description": "Manage the workflows library (~/.spawnie/workflows/).",
+      "arguments": {
+        "action": "list|run|show (required)",
+        "name": "Workflow name (for run/show)",
+        "-i, --input": "Input as key=value (for run)",
+        "--json": "Output as JSON"
+      },
+      "handler": "cmd_workflows"
+    },
+    "cli-monitor": {
+      "name": "monitor",
+      "description": "Launch real-time TUI monitor. Shows workflows, tasks, alerts, stats.",
+      "arguments": {},
+      "handler": "cmd_monitor",
+      "keybindings": {
+        "q": "Quit",
+        "r": "Refresh",
+        "k": "Kill first running workflow",
+        "s": "Screenshot (SVG)",
+        "+": "Faster refresh",
+        "-": "Slower refresh"
+      }
+    },
+    "cli-status": {
+      "name": "status",
+      "description": "Show tracker status. Optional workflow ID for details.",
+      "arguments": {
+        "workflow_id": "Specific workflow ID (optional)",
+        "-w, --watch": "Watch mode with live updates",
+        "--interval": "Watch interval in seconds (default: 2)",
+        "--json": "Output as JSON"
+      },
+      "handler": "cmd_status"
+    },
+    "cli-kill": {
+      "name": "kill",
+      "description": "Kill a running workflow or task.",
+      "arguments": {
+        "target_id": "Workflow (wf-xxx) or task (task-xxx) ID"
+      },
+      "handler": "cmd_kill"
+    }
+  }
+}

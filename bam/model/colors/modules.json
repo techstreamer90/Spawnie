@@ -1,0 +1,66 @@
+{
+  "source_id": "spawnie-modules",
+  "updated_at": "2026-01-30T23:00:00Z",
+  "nodes": {
+    "mod-api": {
+      "path": "src/spawnie/api.py",
+      "description": "Public API for Spawnie. Exposes run(), execute(), spawn() functions. Unifies tasks as single-step workflows.",
+      "loc": 150,
+      "public_api": ["run", "execute", "spawn", "list_models", "get_result", "wait_for_result"]
+    },
+    "mod-tracker": {
+      "path": "src/spawnie/tracker.py",
+      "description": "Central state tracker for all workflows and tasks. Persists to ~/.spawnie/tracker.json. Handles timeouts, orphan detection, stats tracking.",
+      "loc": 900,
+      "public_api": ["get_tracker", "Tracker", "TaskState", "WorkflowState"]
+    },
+    "mod-workflow": {
+      "path": "src/spawnie/workflow.py",
+      "description": "Workflow definition and execution. Parses JSON workflows, resolves dependencies, executes steps in parallel where possible.",
+      "loc": 700,
+      "public_api": ["WorkflowDefinition", "WorkflowExecutor", "WorkflowResult", "StepDefinition"]
+    },
+    "mod-registry": {
+      "path": "src/spawnie/registry.py",
+      "description": "Model registry and routing. Maps model names to providers, handles fallback chains.",
+      "loc": 300,
+      "public_api": ["get_registry", "ModelRegistry", "list_models"]
+    },
+    "mod-session": {
+      "path": "src/spawnie/session.py",
+      "description": "Interactive shell sessions. Spawns CLI agents with bidirectional communication (questions, progress, done signals).",
+      "loc": 400,
+      "public_api": ["ShellSession", "spawn_shell", "ask_question", "report_progress", "signal_done"]
+    },
+    "mod-monitor": {
+      "path": "src/spawnie/monitor.py",
+      "description": "Real-time TUI monitor using Textual. Shows workflows, tasks, alerts, stats.",
+      "loc": 360,
+      "public_api": ["SpawnieMonitor", "run_monitor"]
+    },
+    "mod-main": {
+      "path": "src/spawnie/__main__.py",
+      "description": "CLI entry point. Defines all commands: run, workflow, workflows, status, monitor, kill, etc.",
+      "loc": 850,
+      "public_api": ["main"]
+    },
+    "mod-providers-base": {
+      "path": "src/spawnie/providers/base.py",
+      "description": "Abstract base class for CLI providers. Handles prompt execution via command line or stdin.",
+      "loc": 120,
+      "public_api": ["CLIProvider"]
+    },
+    "mod-providers-claude": {
+      "path": "src/spawnie/providers/claude.py",
+      "description": "Claude CLI provider. Executes prompts via 'claude' command with proper arguments.",
+      "loc": 80,
+      "public_api": ["ClaudeProvider"]
+    },
+    "mod-findings": {
+      "path": "src/spawnie/findings.py",
+      "description": "Structured findings format for code quality analysis. Dataclasses for Finding, Evidence, CodeReference, SuggestedFix.",
+      "loc": 300,
+      "public_api": ["Finding", "FindingsReport", "Severity", "Confidence", "Evidence"]
+    }
+  }
+}
