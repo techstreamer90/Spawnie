@@ -193,9 +193,75 @@ result = run("test prompt", model="test-model")
 
 ## Shell Sessions (Interactive Agents)
 
-Shell sessions allow you to spawn an agent with full file system access that can communicate bidirectionally with an orchestrator.
+Shell sessions spawn agents with full file system access. Two modes available:
 
-### Spawning a Shell Session
+| Mode | Flag | Use Case |
+|------|------|----------|
+| **Interactive** | `--new-window` / `-n` | Opens new terminal for direct user interaction |
+| **Background** | `--background` / `-b` | Programmatic control with real-time event logging |
+
+### Interactive Mode (New Window)
+
+Opens a new terminal window where you can chat directly with the agent:
+
+```bash
+# Spawn interactive agent in new window
+spawnie shell "Help me refactor this codebase" -m claude-sonnet --new-window
+
+# Short form
+spawnie shell "Review my code for bugs" -m claude-haiku -n
+
+# Example: Cleanup assistant
+spawnie shell "Help me clean up old sessions and temp files. Run 'spawnie sessions --all' to start." -m claude-sonnet -n
+```
+
+The agent receives your prompt, responds, and stays interactive for follow-up conversation.
+
+### Background Mode (Programmatic Control)
+
+Starts a session in the background with real-time event logging. Ideal for orchestration by other agents:
+
+```bash
+# Start background session - returns session ID immediately
+spawnie shell "Monitor the system and report status" -m claude-haiku --background
+# Output: session-abc123
+
+# With JSON output
+spawnie shell "Your task" -m claude-haiku -b --json
+# Output: {"session_id": "session-abc123", "status": "running", ...}
+
+# Poll for events (non-blocking)
+spawnie session-events session-abc123 --json
+
+# Respond to questions
+spawnie session-respond session-abc123 evt-id "your answer"
+
+# Example: Monitoring agent
+spawnie shell "Periodically report progress using 'spawnie progress'. Signal completion with 'spawnie done'." -m claude-haiku -b
+```
+
+### Event Polling (Background Mode)
+
+```bash
+# Check session events
+spawnie session-events <session-id> --json
+
+# Output:
+{
+  "session_id": "session-abc123",
+  "status": "running",
+  "events": [
+    {"type": "progress", "message": "Agent online", "event_id": "evt-1"},
+    {"type": "question", "message": "Which files?", "event_id": "evt-2"}
+  ],
+  "pending_questions": [...]
+}
+
+# Respond to a question
+spawnie session-respond session-abc123 evt-2 "All Python files"
+```
+
+### Python API (Background Mode)
 
 ```python
 from spawnie import spawn_shell, EventType
@@ -209,17 +275,14 @@ session = spawn_shell(
 # Event loop - handle agent communication
 for event in session.events():
     if event.type == EventType.QUESTION:
-        # Agent is asking a question
         print(f"Agent asks: {event.message}")
         answer = input("Your answer: ")
         session.respond(event.event_id, answer)
 
     elif event.type == EventType.PROGRESS:
-        # Agent reports progress
         print(f"Progress: {event.message}")
 
     elif event.type == EventType.DONE:
-        # Agent completed the task
         print(f"Done! Result: {event.data.get('result')}")
         break
 
@@ -249,19 +312,16 @@ spawnie done --result "./output/plan.md" --message "Refactor plan complete"
 ### Session Management
 
 ```bash
-# Start a session manually (for testing)
-spawnie shell "Your task here" -m claude-sonnet -i  # -i for interactive
-
 # List active sessions
 spawnie sessions
 
 # List all sessions including ended
-spawnie sessions --all
+spawnie sessions --all --json
 
 # Kill a session
 spawnie session-kill <session-id>
 
-# Clean up old sessions
+# Clean up old sessions (older than 24 hours)
 spawnie sessions --cleanup --max-age 24
 ```
 
@@ -409,6 +469,17 @@ spawnie status                # CLI status summary
 spawnie status --watch        # CLI watch mode
 spawnie status WORKFLOW_ID    # Specific workflow
 spawnie kill TARGET_ID        # Kill workflow or task
+
+# Shell Sessions
+spawnie shell "task" -m MODEL -n          # Interactive (new window)
+spawnie shell "task" -m MODEL -b          # Background (programmatic)
+spawnie shell "task" -m MODEL -b --json   # Background with JSON output
+spawnie session-events SESSION_ID --json  # Poll events from background session
+spawnie session-respond SESSION_ID EVT_ID "answer"  # Respond to question
+spawnie sessions                          # List active sessions
+spawnie sessions --all                    # List all sessions
+spawnie session-kill SESSION_ID           # Kill a session
+spawnie sessions --cleanup --max-age 24   # Clean up old sessions
 
 # Diagnostics
 spawnie detect claude         # Check Claude CLI availability
