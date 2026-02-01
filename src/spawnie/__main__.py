@@ -486,17 +486,30 @@ def cmd_shell(args: argparse.Namespace) -> int:
         working_dir=Path(args.working_dir) if args.working_dir else None,
     )
 
-    print(f"Starting shell session: {session.session_id}")
-    print(f"Working directory: {session.working_dir}")
-    print(f"Model: {args.model}")
-    print()
-
     session.start(
         task=args.task,
         model=args.model,
         provider=args.provider,
     )
 
+    # Background mode: start and return immediately
+    if args.background:
+        if args.json:
+            print(json.dumps({
+                "session_id": session.session_id,
+                "status": "running",
+                "working_dir": str(session.working_dir),
+                "model": args.model,
+            }))
+        else:
+            print(session.session_id)
+        return 0
+
+    # Foreground mode: print info and listen for events
+    print(f"Starting shell session: {session.session_id}")
+    print(f"Working directory: {session.working_dir}")
+    print(f"Model: {args.model}")
+    print()
     print("Session started. Listening for events...")
     print("Press Ctrl+C to stop.")
     print()
@@ -537,6 +550,118 @@ def cmd_shell(args: argparse.Namespace) -> int:
         session.kill()
 
     print(f"\nSession ended. Status: {session.status}")
+    return 0
+
+
+def cmd_session_events(args: argparse.Namespace) -> int:
+    """Get events from a session (non-blocking)."""
+    session = get_session(args.session_id)
+    if not session:
+        if args.json:
+            print(json.dumps({"error": f"Session not found: {args.session_id}"}))
+        else:
+            print(f"Session not found: {args.session_id}")
+        return 1
+
+    # Read all events from the session
+    events = []
+    terminal_event = None
+    if session.events_file.exists():
+        with open(session.events_file, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    try:
+                        evt = json.loads(line)
+                        events.append(evt)
+                        # Track terminal events
+                        if evt.get("type") in ("done", "error"):
+                            terminal_event = evt
+                    except json.JSONDecodeError:
+                        continue
+
+    # Get current status - refresh it based on events and process state
+    status = session.status
+
+    # If we see a terminal event but status is still "running", update it
+    if terminal_event and status == "running":
+        session._status = session._load_status()
+        session._status.status = terminal_event["type"]
+        if terminal_event["type"] == "done":
+            session._status.result = terminal_event.get("data", {}).get("result") or terminal_event.get("message")
+        else:
+            session._status.error = terminal_event.get("message")
+        from datetime import datetime
+        session._status.ended_at = datetime.now()
+        session._save_status()
+        status = terminal_event["type"]
+
+    # Find pending questions (questions without responses)
+    pending_questions = []
+    answered_ids = set()
+    if session.responses_file.exists():
+        with open(session.responses_file, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    try:
+                        resp = json.loads(line)
+                        answered_ids.add(resp.get("event_id"))
+                    except json.JSONDecodeError:
+                        continue
+
+    for evt in events:
+        if evt.get("type") == "question" and evt.get("event_id") not in answered_ids:
+            pending_questions.append(evt)
+
+    if args.json:
+        print(json.dumps({
+            "session_id": args.session_id,
+            "status": status,
+            "events": events,
+            "event_count": len(events),
+            "pending_questions": pending_questions,
+        }, indent=2, default=str))
+    else:
+        print(f"Session: {args.session_id}")
+        print(f"Status: {status}")
+        print(f"Events: {len(events)}")
+        if pending_questions:
+            print(f"Pending questions: {len(pending_questions)}")
+        print()
+        for evt in events:
+            ts = evt.get("timestamp", "")[:19]
+            etype = evt.get("type", "unknown").upper()
+            msg = evt.get("message", "")
+            eid = evt.get("event_id", "")
+            print(f"  [{ts}] {etype}: {msg}")
+            if etype == "QUESTION":
+                answered = eid in answered_ids
+                print(f"           Event ID: {eid} {'(answered)' if answered else '(PENDING)'}")
+
+    return 0
+
+
+def cmd_session_respond(args: argparse.Namespace) -> int:
+    """Respond to a question from a session."""
+    session = get_session(args.session_id)
+    if not session:
+        print(f"Session not found: {args.session_id}", file=sys.stderr)
+        return 1
+
+    # Write the response
+    session.respond(args.event_id, args.answer)
+
+    if args.json:
+        print(json.dumps({
+            "session_id": args.session_id,
+            "event_id": args.event_id,
+            "answer": args.answer,
+            "status": "sent",
+        }))
+    else:
+        print(f"Response sent to event {args.event_id}")
+
     return 0
 
 
@@ -853,6 +978,20 @@ def main() -> int:
     shell_parser.add_argument("-d", "--working-dir", help="Working directory for the session")
     shell_parser.add_argument("--timeout", type=int, default=3600, help="Session timeout in seconds")
     shell_parser.add_argument("-i", "--interactive", action="store_true", help="Interactive mode (answer questions)")
+    shell_parser.add_argument("-b", "--background", action="store_true", help="Start in background, return session ID immediately")
+    shell_parser.add_argument("--json", action="store_true", help="Output as JSON (for --background)")
+
+    # session-events command - get events from a session
+    session_events_parser = subparsers.add_parser("session-events", help="Get events from a session")
+    session_events_parser.add_argument("session_id", help="Session ID")
+    session_events_parser.add_argument("--json", action="store_true", help="Output as JSON")
+
+    # session-respond command - respond to a question
+    session_respond_parser = subparsers.add_parser("session-respond", help="Respond to a session question")
+    session_respond_parser.add_argument("session_id", help="Session ID")
+    session_respond_parser.add_argument("event_id", help="Event ID of the question")
+    session_respond_parser.add_argument("answer", help="Your answer")
+    session_respond_parser.add_argument("--json", action="store_true", help="Output as JSON")
 
     # sessions command - list sessions
     sessions_parser = subparsers.add_parser("sessions", help="List shell sessions")
@@ -919,6 +1058,8 @@ def main() -> int:
         "shell": cmd_shell,
         "sessions": cmd_sessions,
         "session-kill": cmd_session_kill,
+        "session-events": cmd_session_events,
+        "session-respond": cmd_session_respond,
         "ask": cmd_ask,
         "progress": cmd_progress,
         "done": cmd_done,
