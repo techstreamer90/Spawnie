@@ -46,6 +46,10 @@
     "Workflow": {
       "description": "Executable multi-step workflow definition - the model is the source of truth, physical files are projections",
       "properties": ["name", "description", "inputs", "steps", "outputs", "timeout"]
+    },
+    "Config": {
+      "description": "Configuration definition - model is source of truth, physical files are projections",
+      "properties": ["providers", "models", "preferences"]
     }
   },
 
@@ -721,6 +725,123 @@
         "comparison": "{{steps.step2_compare.output}}"
       },
       "timeout": 300
+    },
+
+    {
+      "id": "workflow-complete-model",
+      "type": "Workflow",
+      "label": "Complete Model Coverage",
+      "name": "complete-model",
+      "description": "Phase 1: Complete the BAM model with full coverage of all modules, classes, and functions. Uses subspawns for parallel analysis.",
+      "inputs": {
+        "target_dir": "string"
+      },
+      "steps": {
+        "scan_codebase": {
+          "prompt": "FIRST: Read C:\\seed\\NOTES.md to understand the seed/BAM architecture.\n\nYou are completing the BAM model for spawnie. The model must be the source of truth.\n\nTarget directory: {{inputs.target_dir}}\n\n1. Read the current model at bam/model/sketch.json\n2. List all Python files in src/spawnie/\n3. Identify which modules are MISSING from the model\n4. For each existing module node, check if it's complete\n\nCurrent model has these modules:\n- api.py, tracker.py, workflow.py, registry.py, session.py, monitor.py, __main__.py\n- providers/base.py, providers/claude.py, findings.py\n\nFind what's missing (likely: config.py, daemon.py, detection.py, utils.py, models.py, queue.py, etc.)\n\nReturn JSON:\n```json\n{\n  \"existing_modules\": [\"list of modules in model\"],\n  \"missing_modules\": [\"list of .py files not in model\"],\n  \"incomplete_modules\": [{\"module\": \"name\", \"missing\": [\"classes\", \"functions\"]}],\n  \"total_files\": 20,\n  \"coverage_percent\": 50\n}\n```",
+          "model": "claude-sonnet",
+          "timeout": 900
+        },
+        "analyze_missing_modules": {
+          "prompt": "FIRST: Read C:\\seed\\NOTES.md.\n\nYou have the scan results: {{steps.scan_codebase.output}}\n\nFor each MISSING module, use subspawns to analyze in parallel:\n\n```bash\n# For each missing module, spawn analysis\nspawnie run \"Analyze src/spawnie/MODULE.py: List all classes, functions, dataclasses with line numbers. Return JSON with: module_path, classes [{name, line, methods, docstring}], functions [{name, line, params, returns, docstring}], dataclasses [{name, line, fields}], imports [list]\" -m claude-sonnet\n```\n\nRun spawnie subspawns for each missing module. Collect results.\n\nReturn consolidated JSON:\n```json\n{\n  \"modules_analyzed\": [\n    {\n      \"path\": \"src/spawnie/config.py\",\n      \"classes\": [{\"name\": \"SpawnieConfig\", \"line\": 10, \"methods\": []}],\n      \"functions\": [{\"name\": \"get_config\", \"line\": 50, \"params\": [], \"returns\": \"SpawnieConfig\"}],\n      \"dataclasses\": [],\n      \"imports\": [\"json\", \"pathlib\"]\n    }\n  ]\n}\n```",
+          "model": "claude-sonnet",
+          "depends": ["scan_codebase"],
+          "timeout": 1800
+        },
+        "analyze_incomplete_modules": {
+          "prompt": "FIRST: Read C:\\seed\\NOTES.md.\n\nScan results: {{steps.scan_codebase.output}}\n\nFor each INCOMPLETE module (exists in model but missing classes/functions), use subspawns:\n\n```bash\nspawnie run \"Read src/spawnie/MODULE.py and compare to model. Find classes and functions NOT in the model. Return JSON with missing items.\" -m claude-sonnet\n```\n\nReturn JSON:\n```json\n{\n  \"modules_completed\": [\n    {\n      \"path\": \"src/spawnie/tracker.py\",\n      \"existing_in_model\": [\"Tracker\", \"TaskState\"],\n      \"missing_from_model\": [\n        {\"type\": \"class\", \"name\": \"Alert\", \"line\": 80},\n        {\"type\": \"function\", \"name\": \"cleanup_stale\", \"line\": 200}\n      ]\n    }\n  ]\n}\n```",
+          "model": "claude-sonnet",
+          "depends": ["scan_codebase"],
+          "timeout": 1800
+        },
+        "generate_model_updates": {
+          "prompt": "FIRST: Read C:\\seed\\NOTES.md.\n\nYou have analysis from:\n- Missing modules: {{steps.analyze_missing_modules.output}}\n- Incomplete modules: {{steps.analyze_incomplete_modules.output}}\n\nGenerate the JSON nodes and edges to add to bam/model/sketch.json.\n\nFor each new module, create:\n1. Module node with source.file and source.hash\n2. Class nodes for each class\n3. Function nodes for public functions\n4. Dataclass nodes for dataclasses\n5. DEFINES edges from module to its contents\n6. IMPORTS edges between modules\n\nCompute hashes using: sha256sum src/spawnie/file.py\n\nReturn JSON:\n```json\n{\n  \"new_nodes\": [\n    {\n      \"id\": \"mod-config\",\n      \"type\": \"Module\",\n      \"label\": \"config.py\",\n      \"source\": {\"file\": \"src/spawnie/config.py\", \"hash\": \"abc123...\"}\n    }\n  ],\n  \"new_edges\": [\n    {\"type\": \"DEFINES\", \"from\": \"mod-config\", \"to\": \"cls-spawnie-config\"}\n  ],\n  \"updated_status\": {\n    \"coverage\": {\"modules\": \"14/14\", \"classes\": \"20/20\"},\n    \"health\": \"complete\"\n  }\n}\n```",
+          "model": "claude-sonnet",
+          "depends": ["analyze_missing_modules", "analyze_incomplete_modules"],
+          "timeout": 1200
+        },
+        "apply_updates": {
+          "prompt": "FIRST: Read C:\\seed\\NOTES.md.\n\nYou have the model updates: {{steps.generate_model_updates.output}}\n\n1. Read current bam/model/sketch.json\n2. Add all new_nodes to the nodes array\n3. Add all new_edges to the edges array\n4. Update the status-model node with new coverage\n5. Update the updated_at timestamp\n6. Write the updated model back\n\nVerify the JSON is valid before writing.\n\nReturn:\n```json\n{\n  \"success\": true,\n  \"nodes_added\": 15,\n  \"edges_added\": 25,\n  \"new_total_nodes\": 71,\n  \"new_total_edges\": 96,\n  \"model_path\": \"bam/model/sketch.json\"\n}\n```",
+          "model": "claude-sonnet",
+          "depends": ["generate_model_updates"],
+          "timeout": 600
+        },
+        "verify_model": {
+          "prompt": "FIRST: Read C:\\seed\\NOTES.md.\n\nVerify the updated model:\n\n1. Read bam/model/sketch.json\n2. Check all nodes have required fields (id, type, label)\n3. Check all edges reference existing nodes\n4. For nodes with source.hash, verify hash matches actual file\n5. Check for orphan nodes (not connected)\n\nRun: sha256sum src/spawnie/*.py to get actual hashes\n\nReturn:\n```json\n{\n  \"valid\": true,\n  \"total_nodes\": 71,\n  \"total_edges\": 96,\n  \"hash_verification\": {\n    \"checked\": 14,\n    \"matched\": 14,\n    \"mismatched\": 0\n  },\n  \"integrity_issues\": [],\n  \"orphan_nodes\": []\n}\n```",
+          "model": "claude-sonnet",
+          "depends": ["apply_updates"],
+          "timeout": 900
+        }
+      },
+      "outputs": {
+        "scan_results": "{{steps.scan_codebase.output}}",
+        "missing_analysis": "{{steps.analyze_missing_modules.output}}",
+        "incomplete_analysis": "{{steps.analyze_incomplete_modules.output}}",
+        "model_updates": "{{steps.generate_model_updates.output}}",
+        "apply_results": "{{steps.apply_updates.output}}",
+        "verification": "{{steps.verify_model.output}}"
+      },
+      "timeout": 7200
+    },
+
+    {
+      "id": "config-spawnie",
+      "type": "Config",
+      "label": "Spawnie Configuration",
+      "description": "Model-first configuration: providers, model routes, preferences",
+      "providers": {
+        "claude-cli": {
+          "type": "cli",
+          "command": "claude"
+        },
+        "copilot-cli": {
+          "type": "cli",
+          "command": "gh copilot"
+        },
+        "anthropic-api": {
+          "type": "api",
+          "api_key_env": "ANTHROPIC_API_KEY"
+        },
+        "openai-api": {
+          "type": "api",
+          "api_key_env": "OPENAI_API_KEY"
+        },
+        "mock": {
+          "type": "mock"
+        }
+      },
+      "models": {
+        "claude-sonnet": {
+          "routes": [
+            {"provider": "claude-cli", "priority": 1, "model_id": "sonnet"},
+            {"provider": "anthropic-api", "priority": 2, "model_id": "claude-sonnet-4-20250514"}
+          ],
+          "description": "Claude Sonnet - balanced performance"
+        },
+        "claude-opus": {
+          "routes": [
+            {"provider": "claude-cli", "priority": 1, "model_id": "opus"},
+            {"provider": "anthropic-api", "priority": 2, "model_id": "claude-opus-4-20250514"}
+          ],
+          "description": "Claude Opus - highest capability"
+        },
+        "claude-haiku": {
+          "routes": [
+            {"provider": "claude-cli", "priority": 1, "model_id": "haiku"},
+            {"provider": "anthropic-api", "priority": 2, "model_id": "claude-haiku-3-20250414"}
+          ],
+          "description": "Claude Haiku - fast and efficient"
+        },
+        "test-mock": {
+          "routes": [
+            {"provider": "mock", "priority": 1, "model_id": null}
+          ],
+          "description": "Mock provider for testing"
+        }
+      },
+      "preferences": {
+        "prefer_cli": true
+      }
     }
   ],
 
@@ -804,6 +925,7 @@
     {"type": "USES_MODEL", "from": "workflow-reality-check", "to": "concept-model-first"},
     {"type": "USES_MODEL", "from": "workflow-binary-search", "to": "concept-model-first"},
     {"type": "USES_MODEL", "from": "workflow-merge-sort", "to": "concept-model-first"},
+    {"type": "USES_MODEL", "from": "workflow-complete-model", "to": "concept-model-first"},
     {"type": "EMBODIES", "from": "workflow-reality-check", "to": "concept-orphan-detection"}
   ]
 }

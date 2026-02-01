@@ -21,6 +21,39 @@ logger = logging.getLogger("spawnie.registry")
 DEFAULT_CONFIG_PATH = Path.home() / ".spawnie" / "config.json"
 
 
+def get_config_from_model() -> dict | None:
+    """Read config from BAM model (source of truth).
+
+    Model-first architecture: config is a node in the model,
+    physical config.json is a fallback.
+    """
+    # Check multiple possible model locations
+    candidates = [
+        Path.cwd() / "bam" / "model" / "sketch.json",
+        Path("C:/spawnie/bam/model/sketch.json"),
+    ]
+
+    for model_path in candidates:
+        if model_path.exists():
+            try:
+                with open(model_path, "r", encoding="utf-8") as f:
+                    model = json.load(f)
+
+                # Find Config node
+                for node in model.get("nodes", []):
+                    if node.get("type") == "Config":
+                        return {
+                            "providers": node.get("providers", {}),
+                            "models": node.get("models", {}),
+                            "preferences": node.get("preferences", {}),
+                            "source": "model",
+                        }
+            except Exception as e:
+                logger.debug(f"Could not read config from model: {e}")
+
+    return None
+
+
 @dataclass
 class Route:
     """A route to access a model via a specific provider."""
@@ -116,10 +149,8 @@ class ModelRegistry:
         # Cache stores (available: bool, timestamp: float) tuples
         self._availability_cache: dict[str, tuple[bool, float]] = {}
 
-        if self.config_path.exists():
-            self.load()
-        else:
-            self._init_defaults()
+        # Model-first: always try to load (checks model first, then file)
+        self.load()
 
     def _init_defaults(self):
         """Initialize with sensible defaults."""
@@ -184,9 +215,26 @@ class ModelRegistry:
         }
 
     def load(self):
-        """Load registry from config file."""
-        with open(self.config_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
+        """Load registry from model first, then config file as fallback.
+
+        Model-first architecture: the BAM model is the source of truth.
+        Physical config.json is a compatibility fallback.
+        """
+        # Try model first (source of truth)
+        data = get_config_from_model()
+
+        # Fallback to config file
+        if data is None and self.config_path.exists():
+            with open(self.config_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                data["source"] = "file"
+
+        if data is None:
+            logger.warning("No config found in model or file, using defaults")
+            self._init_defaults()
+            return
+
+        logger.debug(f"Loaded config from {data.get('source', 'unknown')}")
 
         # Load providers
         self.providers = {}

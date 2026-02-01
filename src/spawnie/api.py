@@ -18,6 +18,7 @@ from .config import SpawnieConfig
 from .models import Task, Result, QualityLevel
 from .queue import QueueManager
 from .providers import get_provider
+from .registry import get_registry
 
 logger = logging.getLogger("spawnie.api")
 
