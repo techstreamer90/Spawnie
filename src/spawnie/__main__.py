@@ -484,6 +484,7 @@ def _spawn_new_window(args: argparse.Namespace) -> int:
     """Spawn a new terminal window with an interactive agent."""
     import shutil
     import subprocess
+    import uuid
 
     working_dir = Path(args.working_dir) if args.working_dir else Path.cwd()
 
@@ -496,32 +497,67 @@ def _spawn_new_window(args: argparse.Namespace) -> int:
     # Build the claude command
     model = args.model.replace("claude-", "") if args.model.startswith("claude-") else args.model
 
+    # Create session for logging
+    session_id = f"window-{uuid.uuid4().hex[:12]}"
+    session_dir = Path.home() / ".spawnie" / "sessions" / session_id
+    session_dir.mkdir(parents=True, exist_ok=True)
+
+    log_file = session_dir / "transcript.log"
+    prompt_file = session_dir / "prompt.txt"
+
+    # Save the prompt
+    prompt_file.write_text(args.task, encoding="utf-8")
+
+    # Write session status
+    status_file = session_dir / "status.json"
+    import json
+    from datetime import datetime
+    status_file.write_text(json.dumps({
+        "session_id": session_id,
+        "status": "running",
+        "model": model,
+        "working_dir": str(working_dir),
+        "started_at": datetime.now().isoformat(),
+        "prompt": args.task,
+    }, indent=2), encoding="utf-8")
+
     # Escape the task for shell
     task = args.task.replace('"', '\\"')
 
     if sys.platform == "win32":
-        # Windows: use 'start' to open new window
-        # Use cmd /k to keep window open, or wt (Windows Terminal) if available
+        # Windows: use PowerShell with Tee-Object to log output
         wt_path = shutil.which("wt")
 
+        # PowerShell command that runs claude and tees to log file
+        ps_cmd = f'''
+$host.UI.RawUI.WindowTitle = "Spawnie: {model} [{session_id}]"
+Write-Output "Session: {session_id}" | Tee-Object -FilePath "{log_file}"
+Write-Output "Prompt: {task}" | Tee-Object -FilePath "{log_file}" -Append
+Write-Output "---" | Tee-Object -FilePath "{log_file}" -Append
+& "{claude_path}" --model {model} "{task}" 2>&1 | Tee-Object -FilePath "{log_file}" -Append
+'''
+
         if wt_path:
-            # Windows Terminal - nicer experience
+            # Windows Terminal
             cmd = [
                 wt_path,
                 "--title", f"Spawnie: {model}",
                 "-d", str(working_dir),
-                claude_path, "--model", model, task
+                "powershell", "-NoExit", "-Command", ps_cmd
             ]
         else:
-            # Fallback to cmd
-            claude_cmd = f'"{claude_path}" --model {model} "{task}"'
-            cmd = ["cmd", "/c", "start", f"Spawnie: {model}", "cmd", "/k", claude_cmd]
+            # Fallback to cmd launching powershell
+            cmd = [
+                "powershell", "-NoExit", "-Command",
+                f"Start-Process powershell -ArgumentList '-NoExit', '-Command', '{ps_cmd}'"
+            ]
 
         subprocess.Popen(cmd, cwd=working_dir, shell=False)
 
     elif sys.platform == "darwin":
-        # macOS: use osascript to open Terminal
-        claude_cmd = f'cd "{working_dir}" && "{claude_path}" --model {model} "{task}"'
+        # macOS: use script command to log
+        script_cmd = f'script -q "{log_file}" {claude_path} --model {model} "{task}"'
+        claude_cmd = f'cd "{working_dir}" && echo "Session: {session_id}" && echo "Prompt: {task}" && echo "---" && {script_cmd}'
         apple_script = f'''
         tell application "Terminal"
             do script "{claude_cmd}"
@@ -531,12 +567,14 @@ def _spawn_new_window(args: argparse.Namespace) -> int:
         subprocess.Popen(["osascript", "-e", apple_script])
 
     else:
-        # Linux: try common terminal emulators
+        # Linux: use script command to log
+        script_cmd = f'echo "Session: {session_id}" | tee "{log_file}" && echo "Prompt: {task}" | tee -a "{log_file}" && echo "---" | tee -a "{log_file}" && script -q -c \'{claude_path} --model {model} "{task}"\' -a "{log_file}"'
+
         terminals = [
-            ("gnome-terminal", ["gnome-terminal", "--", claude_path, "--model", model, task]),
-            ("konsole", ["konsole", "-e", claude_path, "--model", model, task]),
-            ("xfce4-terminal", ["xfce4-terminal", "-e", f"{claude_path} --model {model} '{task}'"]),
-            ("xterm", ["xterm", "-e", claude_path, "--model", model, task]),
+            ("gnome-terminal", ["gnome-terminal", "--", "bash", "-c", script_cmd]),
+            ("konsole", ["konsole", "-e", "bash", "-c", script_cmd]),
+            ("xfce4-terminal", ["xfce4-terminal", "-e", f"bash -c '{script_cmd}'"]),
+            ("xterm", ["xterm", "-e", "bash", "-c", script_cmd]),
         ]
 
         launched = False
@@ -551,8 +589,12 @@ def _spawn_new_window(args: argparse.Namespace) -> int:
             print("Tried: gnome-terminal, konsole, xfce4-terminal, xterm", file=sys.stderr)
             return 1
 
-    print(f"Spawned new window with {model} agent")
+    print(f"Session: {session_id}")
+    print(f"Model: {model}")
     print(f"Working directory: {working_dir}")
+    print(f"Log: {log_file}")
+    print()
+    print(f"To monitor: spawnie session-log {session_id}")
     return 0
 
 
@@ -743,6 +785,53 @@ def cmd_session_respond(args: argparse.Namespace) -> int:
     else:
         print(f"Response sent to event {args.event_id}")
 
+    return 0
+
+
+def cmd_session_log(args: argparse.Namespace) -> int:
+    """Read the transcript log from a session."""
+    import re
+
+    session_dir = Path.home() / ".spawnie" / "sessions" / args.session_id
+
+    if not session_dir.exists():
+        print(f"Session not found: {args.session_id}", file=sys.stderr)
+        return 1
+
+    log_file = session_dir / "transcript.log"
+    prompt_file = session_dir / "prompt.txt"
+
+    # Show prompt if requested
+    if args.prompt and prompt_file.exists():
+        print("=== PROMPT ===")
+        print(prompt_file.read_text(encoding="utf-8", errors="replace"))
+        print("==============")
+        print()
+
+    if not log_file.exists():
+        print("(no transcript yet)")
+        return 0
+
+    content = log_file.read_text(encoding="utf-8", errors="replace")
+
+    # Strip ANSI escape codes and other terminal control sequences
+    ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+    content = ansi_escape.sub('', content)
+
+    # Remove other non-printable characters except newlines and tabs
+    content = ''.join(c if c.isprintable() or c in '\n\t\r' else '' for c in content)
+
+    if args.tail:
+        # Show last N lines
+        lines = content.splitlines()
+        content = "\n".join(lines[-args.tail:])
+
+    # Handle Windows console encoding issues
+    try:
+        print(content)
+    except UnicodeEncodeError:
+        # Fallback: encode to ASCII with replacement
+        print(content.encode('ascii', errors='replace').decode('ascii'))
     return 0
 
 
@@ -1075,6 +1164,12 @@ def main() -> int:
     session_respond_parser.add_argument("answer", help="Your answer")
     session_respond_parser.add_argument("--json", action="store_true", help="Output as JSON")
 
+    # session-log command - read transcript from a session
+    session_log_parser = subparsers.add_parser("session-log", help="Read transcript from a session")
+    session_log_parser.add_argument("session_id", help="Session ID")
+    session_log_parser.add_argument("--tail", "-t", type=int, help="Show last N lines")
+    session_log_parser.add_argument("--prompt", "-p", action="store_true", help="Show the original prompt")
+
     # sessions command - list sessions
     sessions_parser = subparsers.add_parser("sessions", help="List shell sessions")
     sessions_parser.add_argument("--all", "-a", action="store_true", help="Include ended sessions")
@@ -1142,6 +1237,7 @@ def main() -> int:
         "session-kill": cmd_session_kill,
         "session-events": cmd_session_events,
         "session-respond": cmd_session_respond,
+        "session-log": cmd_session_log,
         "ask": cmd_ask,
         "progress": cmd_progress,
         "done": cmd_done,
