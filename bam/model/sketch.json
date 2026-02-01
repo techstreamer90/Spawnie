@@ -1,931 +1,424 @@
 {
-  "schema_version": "2.0",
-  "project": "spawnie-model",
-  "updated_at": "2026-01-31T00:30:00Z",
+  "schema_version": "3.0",
+  "project": "spawnie",
+  "description": "Workflow orchestrator for CLI agents. First system fully embracing seed philosophy.",
+  "updated_at": "2026-02-01T04:45:00Z",
   "source_root": "..",
 
-  "verification": {
-    "description": "Reality is part of this model. Each node has a source reference with file path, line number, and hash. When reality changes, the hash mismatches signal drift.",
-    "last_verified": "2026-01-31T00:30:00Z",
-    "verification_command": "sha256sum"
+  "meta": {
+    "layers": {
+      "description": "Layers are contextual lenses for interpreting nodes, not categories",
+      "aspiration": "The 'why' - goals, intent, human-controlled",
+      "design": "The 'what' - structure, workflows, config, definitions",
+      "execution": "The 'now' - active state, running processes, inputs/outputs",
+      "reality": "The 'is' - verified artifacts, hashes, ground truth"
+    },
+    "hierarchy": {
+      "description": "Nodes can contain sub-BAMs. Zoom in for detail, zoom out for overview.",
+      "current_level": "system",
+      "levels": ["meta", "reality", "system", "module", "component", "leaf"]
+    }
   },
 
   "node_types": {
+    "Subsystem": {
+      "description": "A major component of the system containing its own sub-BAM",
+      "properties": ["description"],
+      "can_contain_model": true
+    },
     "Module": {
       "description": "Python module (file)",
-      "properties": ["path", "description", "loc", "public_api"]
+      "properties": ["path", "description"]
     },
     "Class": {
       "description": "Python class",
-      "properties": ["module", "description", "methods", "attributes"]
+      "properties": ["description", "line"]
     },
     "Function": {
       "description": "Standalone function",
-      "properties": ["module", "description", "parameters", "returns"]
+      "properties": ["description", "line"]
     },
     "Dataclass": {
-      "description": "Data structure (dataclass/TypedDict)",
-      "properties": ["module", "fields", "description"]
+      "description": "Data structure",
+      "properties": ["description", "line"]
     },
     "CLICommand": {
       "description": "CLI command exposed by spawnie",
-      "properties": ["name", "description", "arguments", "handler"]
+      "properties": ["description", "line"]
     },
     "Concept": {
       "description": "Architectural concept or pattern",
-      "properties": ["description", "rationale"]
-    },
-    "Todo": {
-      "description": "Work that needs to be done",
-      "properties": ["description", "status", "priority"]
-    },
-    "Status": {
-      "description": "State of the model or a part of it",
-      "properties": ["coverage", "health", "last_verified"]
+      "properties": ["description"]
     },
     "Workflow": {
-      "description": "Executable multi-step workflow definition - the model is the source of truth, physical files are projections",
-      "properties": ["name", "description", "inputs", "steps", "outputs", "timeout"]
+      "description": "Executable workflow definition",
+      "properties": ["name", "description", "steps", "timeout"],
+      "can_contain_model": true
     },
     "Config": {
-      "description": "Configuration definition - model is source of truth, physical files are projections",
+      "description": "Configuration definition",
       "properties": ["providers", "models", "preferences"]
+    },
+    "Aspiration": {
+      "description": "A goal or intent - human controlled",
+      "properties": ["description", "status"]
     }
   },
 
   "edge_types": {
+    "CONTAINS": {
+      "description": "Parent contains child in hierarchy",
+      "from_types": ["Subsystem"],
+      "to_types": ["Module", "Subsystem"]
+    },
     "IMPORTS": {
       "description": "Module imports another module",
       "from_types": ["Module"],
       "to_types": ["Module"]
     },
     "DEFINES": {
-      "description": "Module defines a class/function/dataclass",
+      "description": "Module defines a class/function",
       "from_types": ["Module"],
       "to_types": ["Class", "Function", "Dataclass"]
     },
-    "INHERITS": {
-      "description": "Class inherits from another",
-      "from_types": ["Class"],
-      "to_types": ["Class"]
-    },
-    "CALLS": {
-      "description": "Function/method calls another",
-      "from_types": ["Function", "Class"],
-      "to_types": ["Function", "Class"]
-    },
-    "USES": {
-      "description": "Class uses another class",
-      "from_types": ["Class"],
-      "to_types": ["Class", "Dataclass"]
-    },
-    "IMPLEMENTS": {
-      "description": "CLI command implemented by handler",
-      "from_types": ["CLICommand"],
-      "to_types": ["Function"]
-    },
     "EMBODIES": {
       "description": "Code embodies an architectural concept",
-      "from_types": ["Module", "Class"],
+      "from_types": ["Subsystem", "Module"],
       "to_types": ["Concept"]
     },
-    "NEEDS": {
-      "description": "Something needs work done",
-      "from_types": ["Module", "Class", "Function", "Status"],
-      "to_types": ["Todo"]
-    },
-    "BLOCKED_BY": {
-      "description": "A todo is blocked by another",
-      "from_types": ["Todo"],
-      "to_types": ["Todo"]
-    },
-    "USES_MODEL": {
-      "description": "Workflow uses a model for execution",
-      "from_types": ["Workflow"],
-      "to_types": ["Concept"]
+    "IMPLEMENTS": {
+      "description": "Realizes an aspiration",
+      "from_types": ["Subsystem", "Module", "Workflow"],
+      "to_types": ["Aspiration"]
     }
   },
 
   "nodes": [
     {
-      "id": "mod-api",
-      "type": "Module",
-      "label": "api.py",
-      "source": {
-        "file": "src/spawnie/api.py",
-        "hash": "c32e29155818e88c451303e5280e94efea730fcc05879028d110cda698cf6d13"
-      }
-    },
-    {
-      "id": "mod-tracker",
-      "type": "Module",
-      "label": "tracker.py",
-      "source": {
-        "file": "src/spawnie/tracker.py",
-        "hash": "c4561408b1272866a4f8423d66b811cb7cd5575e59e90397d8f42adef3f0f165"
-      }
-    },
-    {
-      "id": "mod-workflow",
-      "type": "Module",
-      "label": "workflow.py",
-      "source": {
-        "file": "src/spawnie/workflow.py",
-        "hash": "5d140e997b6a99686684d1126488d107e1d3cc656fa58d9271c9b9fb925986b7"
-      }
-    },
-    {
-      "id": "mod-registry",
-      "type": "Module",
-      "label": "registry.py",
-      "source": {
-        "file": "src/spawnie/registry.py",
-        "hash": "b35500914044aa8480678acb55160842f38bea1085922fc4446130597fe14aa2"
-      }
-    },
-    {
-      "id": "mod-session",
-      "type": "Module",
-      "label": "session.py",
-      "source": {
-        "file": "src/spawnie/session.py",
-        "hash": "59138744d65b484a9803a52ee83e9573ad7967ba65d7bfec2a55111574cf30bb"
-      }
-    },
-    {
-      "id": "mod-monitor",
-      "type": "Module",
-      "label": "monitor.py",
-      "source": {
-        "file": "src/spawnie/monitor.py",
-        "hash": "519004d199f366e8f6103debc0c0d26f61da0825277c0231786df43ac127ddc4"
-      }
-    },
-    {
-      "id": "mod-main",
-      "type": "Module",
-      "label": "__main__.py",
-      "source": {
-        "file": "src/spawnie/__main__.py",
-        "hash": "918077c2aca6f301aa9d159d4d539cc95286b61488d1226c9b942aec6992bc9c"
-      }
-    },
-    {
-      "id": "mod-providers-base",
-      "type": "Module",
-      "label": "providers/base.py",
-      "source": {
-        "file": "src/spawnie/providers/base.py",
-        "hash": "1580f38cdcf80b33679c2825202190dbac37cd73091415d186c3318ebe9c1528"
-      }
-    },
-    {
-      "id": "mod-providers-claude",
-      "type": "Module",
-      "label": "providers/claude.py",
-      "source": {
-        "file": "src/spawnie/providers/claude.py",
-        "hash": "a3a3a2c0ff7ae0b2968681ced4a9bc0f5414085a6640035fde766f99cdaa0541"
-      }
-    },
-    {
-      "id": "mod-findings",
-      "type": "Module",
-      "label": "findings.py",
-      "source": {
-        "file": "src/spawnie/findings.py",
-        "hash": "ed654307ea5f63bc0052e4f67a5c87533eef51578ad34e565a7cfef7ba5e4238"
-      }
-    },
-
-    {
-      "id": "cls-tracker",
-      "type": "Class",
-      "label": "Tracker",
-      "source": {
-        "file": "src/spawnie/tracker.py",
-        "line": 215,
-        "hash": "c4561408b1272866a4f8423d66b811cb7cd5575e59e90397d8f42adef3f0f165"
-      }
-    },
-    {
-      "id": "cls-workflow-executor",
-      "type": "Class",
-      "label": "WorkflowExecutor",
-      "source": {
-        "file": "src/spawnie/workflow.py",
-        "line": 328,
-        "hash": "5d140e997b6a99686684d1126488d107e1d3cc656fa58d9271c9b9fb925986b7"
-      }
-    },
-    {
-      "id": "cls-workflow-def",
-      "type": "Class",
-      "label": "WorkflowDefinition",
-      "source": {
-        "file": "src/spawnie/workflow.py",
-        "line": 137,
-        "hash": "5d140e997b6a99686684d1126488d107e1d3cc656fa58d9271c9b9fb925986b7"
-      }
-    },
-    {
-      "id": "cls-shell-session",
-      "type": "Class",
-      "label": "ShellSession",
-      "source": {
-        "file": "src/spawnie/session.py",
-        "line": 143,
-        "hash": "59138744d65b484a9803a52ee83e9573ad7967ba65d7bfec2a55111574cf30bb"
-      }
-    },
-    {
-      "id": "cls-registry",
-      "type": "Class",
-      "label": "ModelRegistry",
-      "source": {
-        "file": "src/spawnie/registry.py",
-        "line": 102,
-        "hash": "b35500914044aa8480678acb55160842f38bea1085922fc4446130597fe14aa2"
-      }
-    },
-    {
-      "id": "cls-cli-provider",
-      "type": "Class",
-      "label": "CLIProvider",
-      "source": {
-        "file": "src/spawnie/providers/base.py",
-        "line": 14,
-        "hash": "1580f38cdcf80b33679c2825202190dbac37cd73091415d186c3318ebe9c1528"
-      }
-    },
-    {
-      "id": "cls-claude-provider",
-      "type": "Class",
-      "label": "ClaudeCLIProvider",
-      "source": {
-        "file": "src/spawnie/providers/claude.py",
-        "line": 9,
-        "hash": "a3a3a2c0ff7ae0b2968681ced4a9bc0f5414085a6640035fde766f99cdaa0541"
-      }
-    },
-    {
-      "id": "cls-monitor-app",
-      "type": "Class",
-      "label": "SpawnieMonitor",
-      "source": {
-        "file": "src/spawnie/monitor.py",
-        "line": 184,
-        "hash": "519004d199f366e8f6103debc0c0d26f61da0825277c0231786df43ac127ddc4"
-      }
-    },
-    {
-      "id": "cls-finding",
-      "type": "Class",
-      "label": "Finding",
-      "source": {
-        "file": "src/spawnie/findings.py",
-        "line": 104,
-        "hash": "ed654307ea5f63bc0052e4f67a5c87533eef51578ad34e565a7cfef7ba5e4238"
-      }
-    },
-    {
-      "id": "cls-findings-report",
-      "type": "Class",
-      "label": "FindingsReport",
-      "source": {
-        "file": "src/spawnie/findings.py",
-        "line": 146,
-        "hash": "ed654307ea5f63bc0052e4f67a5c87533eef51578ad34e565a7cfef7ba5e4238"
+      "id": "subsystem-core",
+      "type": "Subsystem",
+      "label": "Core",
+      "description": "Core modules: API, workflow execution, tracking, registry",
+      "model": {
+        "nodes": [
+          {
+            "id": "mod-api",
+            "type": "Module",
+            "label": "api.py",
+            "source": {"file": "src/spawnie/api.py", "hash": "c32e29155818e88c451303e5280e94efea730fcc05879028d110cda698cf6d13"},
+            "model": {
+              "nodes": [
+                {"id": "fn-run", "type": "Function", "label": "run()", "line": 29},
+                {"id": "fn-execute", "type": "Function", "label": "execute()", "line": 365},
+                {"id": "fn-spawn", "type": "Function", "label": "spawn()", "line": 158},
+                {"id": "fn-list-models", "type": "Function", "label": "list_models()", "line": 340}
+              ],
+              "edges": [
+                {"type": "CALLS", "from": "fn-run", "to": "fn-execute"}
+              ]
+            }
+          },
+          {
+            "id": "mod-workflow",
+            "type": "Module",
+            "label": "workflow.py",
+            "source": {"file": "src/spawnie/workflow.py", "hash": "5d140e997b6a99686684d1126488d107e1d3cc656fa58d9271c9b9fb925986b7"},
+            "model": {
+              "nodes": [
+                {"id": "cls-workflow-executor", "type": "Class", "label": "WorkflowExecutor", "line": 328},
+                {"id": "cls-workflow-def", "type": "Class", "label": "WorkflowDefinition", "line": 137},
+                {"id": "dc-step-definition", "type": "Dataclass", "label": "StepDefinition", "line": 109},
+                {"id": "dc-workflow-result", "type": "Dataclass", "label": "WorkflowResult", "line": 302}
+              ],
+              "edges": []
+            }
+          },
+          {
+            "id": "mod-tracker",
+            "type": "Module",
+            "label": "tracker.py",
+            "source": {"file": "src/spawnie/tracker.py", "hash": "c4561408b1272866a4f8423d66b811cb7cd5575e59e90397d8f42adef3f0f165"},
+            "model": {
+              "nodes": [
+                {"id": "cls-tracker", "type": "Class", "label": "Tracker", "line": 215},
+                {"id": "dc-task-state", "type": "Dataclass", "label": "TaskState", "line": 24},
+                {"id": "dc-workflow-state", "type": "Dataclass", "label": "WorkflowState", "line": 124},
+                {"id": "dc-step-state", "type": "Dataclass", "label": "StepState", "line": 89},
+                {"id": "fn-get-tracker", "type": "Function", "label": "get_tracker()", "line": 1050}
+              ],
+              "edges": []
+            }
+          },
+          {
+            "id": "mod-registry",
+            "type": "Module",
+            "label": "registry.py",
+            "source": {"file": "src/spawnie/registry.py", "hash": "pending-update"},
+            "model": {
+              "nodes": [
+                {"id": "cls-registry", "type": "Class", "label": "ModelRegistry", "line": 136},
+                {"id": "fn-get-registry", "type": "Function", "label": "get_registry()", "line": 400},
+                {"id": "fn-get-config-from-model", "type": "Function", "label": "get_config_from_model()", "line": 24}
+              ],
+              "edges": []
+            }
+          },
+          {
+            "id": "mod-session",
+            "type": "Module",
+            "label": "session.py",
+            "source": {"file": "src/spawnie/session.py", "hash": "59138744d65b484a9803a52ee83e9573ad7967ba65d7bfec2a55111574cf30bb"},
+            "model": {
+              "nodes": [
+                {"id": "cls-shell-session", "type": "Class", "label": "ShellSession", "line": 143}
+              ],
+              "edges": []
+            }
+          },
+          {
+            "id": "mod-monitor",
+            "type": "Module",
+            "label": "monitor.py",
+            "source": {"file": "src/spawnie/monitor.py", "hash": "519004d199f366e8f6103debc0c0d26f61da0825277c0231786df43ac127ddc4"},
+            "model": {
+              "nodes": [
+                {"id": "cls-monitor-app", "type": "Class", "label": "SpawnieMonitor", "line": 184},
+                {"id": "fn-run-monitor", "type": "Function", "label": "run_monitor()", "line": 354}
+              ],
+              "edges": []
+            }
+          },
+          {
+            "id": "mod-main",
+            "type": "Module",
+            "label": "__main__.py",
+            "source": {"file": "src/spawnie/__main__.py", "hash": "pending-update"},
+            "model": {
+              "nodes": [
+                {"id": "cli-run", "type": "CLICommand", "label": "spawnie run", "line": 80},
+                {"id": "cli-workflow", "type": "CLICommand", "label": "spawnie workflow", "line": 122},
+                {"id": "cli-workflows", "type": "CLICommand", "label": "spawnie workflows", "line": 926},
+                {"id": "cli-monitor", "type": "CLICommand", "label": "spawnie monitor", "line": 380},
+                {"id": "cli-status", "type": "CLICommand", "label": "spawnie status", "line": 183},
+                {"id": "cli-shell", "type": "CLICommand", "label": "spawnie shell", "line": 450}
+              ],
+              "edges": []
+            }
+          },
+          {
+            "id": "mod-findings",
+            "type": "Module",
+            "label": "findings.py",
+            "source": {"file": "src/spawnie/findings.py", "hash": "ed654307ea5f63bc0052e4f67a5c87533eef51578ad34e565a7cfef7ba5e4238"},
+            "model": {
+              "nodes": [
+                {"id": "cls-finding", "type": "Class", "label": "Finding", "line": 104},
+                {"id": "cls-findings-report", "type": "Class", "label": "FindingsReport", "line": 146}
+              ],
+              "edges": []
+            }
+          }
+        ],
+        "edges": [
+          {"type": "IMPORTS", "from": "mod-api", "to": "mod-workflow"},
+          {"type": "IMPORTS", "from": "mod-api", "to": "mod-tracker"},
+          {"type": "IMPORTS", "from": "mod-api", "to": "mod-registry"},
+          {"type": "IMPORTS", "from": "mod-workflow", "to": "mod-tracker"},
+          {"type": "IMPORTS", "from": "mod-workflow", "to": "mod-registry"},
+          {"type": "IMPORTS", "from": "mod-session", "to": "mod-tracker"},
+          {"type": "IMPORTS", "from": "mod-monitor", "to": "mod-tracker"},
+          {"type": "IMPORTS", "from": "mod-main", "to": "mod-api"}
+        ]
       }
     },
 
     {
-      "id": "dc-task-state",
-      "type": "Dataclass",
-      "label": "TaskState",
-      "source": {
-        "file": "src/spawnie/tracker.py",
-        "line": 24,
-        "hash": "c4561408b1272866a4f8423d66b811cb7cd5575e59e90397d8f42adef3f0f165"
-      }
-    },
-    {
-      "id": "dc-workflow-state",
-      "type": "Dataclass",
-      "label": "WorkflowState",
-      "source": {
-        "file": "src/spawnie/tracker.py",
-        "line": 124,
-        "hash": "c4561408b1272866a4f8423d66b811cb7cd5575e59e90397d8f42adef3f0f165"
-      }
-    },
-    {
-      "id": "dc-step-state",
-      "type": "Dataclass",
-      "label": "StepState",
-      "source": {
-        "file": "src/spawnie/tracker.py",
-        "line": 89,
-        "hash": "c4561408b1272866a4f8423d66b811cb7cd5575e59e90397d8f42adef3f0f165"
-      }
-    },
-    {
-      "id": "dc-step-definition",
-      "type": "Dataclass",
-      "label": "StepDefinition",
-      "source": {
-        "file": "src/spawnie/workflow.py",
-        "line": 109,
-        "hash": "5d140e997b6a99686684d1126488d107e1d3cc656fa58d9271c9b9fb925986b7"
-      }
-    },
-    {
-      "id": "dc-workflow-result",
-      "type": "Dataclass",
-      "label": "WorkflowResult",
-      "source": {
-        "file": "src/spawnie/workflow.py",
-        "line": 302,
-        "hash": "5d140e997b6a99686684d1126488d107e1d3cc656fa58d9271c9b9fb925986b7"
-      }
-    },
-    {
-      "id": "dc-code-reference",
-      "type": "Dataclass",
-      "label": "CodeReference",
-      "source": {
-        "file": "src/spawnie/findings.py",
-        "line": 31,
-        "hash": "ed654307ea5f63bc0052e4f67a5c87533eef51578ad34e565a7cfef7ba5e4238"
-      }
-    },
-    {
-      "id": "dc-evidence",
-      "type": "Dataclass",
-      "label": "Evidence",
-      "source": {
-        "file": "src/spawnie/findings.py",
-        "line": 57,
-        "hash": "ed654307ea5f63bc0052e4f67a5c87533eef51578ad34e565a7cfef7ba5e4238"
-      }
-    },
-    {
-      "id": "dc-suggested-fix",
-      "type": "Dataclass",
-      "label": "SuggestedFix",
-      "source": {
-        "file": "src/spawnie/findings.py",
-        "line": 83,
-        "hash": "ed654307ea5f63bc0052e4f67a5c87533eef51578ad34e565a7cfef7ba5e4238"
+      "id": "subsystem-providers",
+      "type": "Subsystem",
+      "label": "Providers",
+      "description": "LLM providers: CLI tools, APIs",
+      "model": {
+        "nodes": [
+          {
+            "id": "mod-providers-base",
+            "type": "Module",
+            "label": "providers/base.py",
+            "source": {"file": "src/spawnie/providers/base.py", "hash": "1580f38cdcf80b33679c2825202190dbac37cd73091415d186c3318ebe9c1528"},
+            "model": {
+              "nodes": [
+                {"id": "cls-cli-provider", "type": "Class", "label": "CLIProvider", "line": 14}
+              ],
+              "edges": []
+            }
+          },
+          {
+            "id": "mod-providers-claude",
+            "type": "Module",
+            "label": "providers/claude.py",
+            "source": {"file": "src/spawnie/providers/claude.py", "hash": "a3a3a2c0ff7ae0b2968681ced4a9bc0f5414085a6640035fde766f99cdaa0541"},
+            "model": {
+              "nodes": [
+                {"id": "cls-claude-provider", "type": "Class", "label": "ClaudeCLIProvider", "line": 9}
+              ],
+              "edges": []
+            }
+          }
+        ],
+        "edges": [
+          {"type": "IMPORTS", "from": "mod-providers-claude", "to": "mod-providers-base"}
+        ]
       }
     },
 
     {
-      "id": "fn-run",
-      "type": "Function",
-      "label": "run()",
-      "source": {
-        "file": "src/spawnie/api.py",
-        "line": 29,
-        "hash": "c32e29155818e88c451303e5280e94efea730fcc05879028d110cda698cf6d13"
+      "id": "subsystem-workflows",
+      "type": "Subsystem",
+      "label": "Workflows",
+      "description": "Workflow definitions - model is source of truth",
+      "model": {
+        "nodes": [
+          {
+            "id": "workflow-code-quality",
+            "type": "Workflow",
+            "label": "Code Quality Check",
+            "name": "code-quality-check",
+            "description": "Comprehensive code quality analysis",
+            "timeout": 2700,
+            "model": {
+              "nodes": [
+                {"id": "step-analyze-structure", "type": "Function", "label": "analyze_structure"},
+                {"id": "step-check-consistency", "type": "Function", "label": "check_consistency"},
+                {"id": "step-find-improvements", "type": "Function", "label": "find_improvements"},
+                {"id": "step-run-tests", "type": "Function", "label": "run_tests"},
+                {"id": "step-verify-docs", "type": "Function", "label": "verify_documentation"},
+                {"id": "step-agent-feedback", "type": "Function", "label": "agent_usage_feedback"},
+                {"id": "step-verify-findings", "type": "Function", "label": "verify_findings"},
+                {"id": "step-synthesize", "type": "Function", "label": "synthesize_report"}
+              ],
+              "edges": [
+                {"type": "DEPENDS", "from": "step-verify-findings", "to": "step-analyze-structure"},
+                {"type": "DEPENDS", "from": "step-verify-findings", "to": "step-check-consistency"},
+                {"type": "DEPENDS", "from": "step-synthesize", "to": "step-verify-findings"}
+              ]
+            }
+          },
+          {
+            "id": "workflow-reality-check",
+            "type": "Workflow",
+            "label": "Reality Check",
+            "name": "reality-check",
+            "description": "Validates artifacts match model",
+            "timeout": 1200,
+            "model": {
+              "nodes": [
+                {"id": "step-load-context", "type": "Function", "label": "load_context"},
+                {"id": "step-verify-reality", "type": "Function", "label": "verify_reality_nodes"},
+                {"id": "step-verify-aspiration", "type": "Function", "label": "verify_aspiration_nodes"},
+                {"id": "step-check-health", "type": "Function", "label": "check_system_health"},
+                {"id": "step-check-integrity", "type": "Function", "label": "check_model_integrity"},
+                {"id": "step-synthesize-report", "type": "Function", "label": "synthesize_reality_report"}
+              ],
+              "edges": []
+            }
+          },
+          {
+            "id": "workflow-complete-model",
+            "type": "Workflow",
+            "label": "Complete Model",
+            "name": "complete-model",
+            "description": "Complete BAM model coverage",
+            "timeout": 7200,
+            "model": {
+              "nodes": [
+                {"id": "step-scan", "type": "Function", "label": "scan_codebase"},
+                {"id": "step-analyze-missing", "type": "Function", "label": "analyze_missing_modules"},
+                {"id": "step-analyze-incomplete", "type": "Function", "label": "analyze_incomplete_modules"},
+                {"id": "step-generate", "type": "Function", "label": "generate_model_updates"},
+                {"id": "step-apply", "type": "Function", "label": "apply_updates"},
+                {"id": "step-verify", "type": "Function", "label": "verify_model"}
+              ],
+              "edges": []
+            }
+          }
+        ],
+        "edges": []
       }
-    },
-    {
-      "id": "fn-execute",
-      "type": "Function",
-      "label": "execute()",
-      "source": {
-        "file": "src/spawnie/api.py",
-        "line": 365,
-        "hash": "c32e29155818e88c451303e5280e94efea730fcc05879028d110cda698cf6d13"
-      }
-    },
-    {
-      "id": "fn-spawn",
-      "type": "Function",
-      "label": "spawn()",
-      "source": {
-        "file": "src/spawnie/api.py",
-        "line": 158,
-        "hash": "c32e29155818e88c451303e5280e94efea730fcc05879028d110cda698cf6d13"
-      }
-    },
-    {
-      "id": "fn-get-tracker",
-      "type": "Function",
-      "label": "get_tracker()",
-      "source": {
-        "file": "src/spawnie/tracker.py",
-        "line": 1050,
-        "hash": "c4561408b1272866a4f8423d66b811cb7cd5575e59e90397d8f42adef3f0f165"
-      }
-    },
-    {
-      "id": "fn-get-registry",
-      "type": "Function",
-      "label": "get_registry()",
-      "source": {
-        "file": "src/spawnie/registry.py",
-        "line": 366,
-        "hash": "b35500914044aa8480678acb55160842f38bea1085922fc4446130597fe14aa2"
-      }
-    },
-    {
-      "id": "fn-run-monitor",
-      "type": "Function",
-      "label": "run_monitor()",
-      "source": {
-        "file": "src/spawnie/monitor.py",
-        "line": 354,
-        "hash": "519004d199f366e8f6103debc0c0d26f61da0825277c0231786df43ac127ddc4"
-      }
-    },
-
-    {
-      "id": "cli-run",
-      "type": "CLICommand",
-      "label": "spawnie run",
-      "source": {
-        "file": "src/spawnie/__main__.py",
-        "line": 80,
-        "hash": "918077c2aca6f301aa9d159d4d539cc95286b61488d1226c9b942aec6992bc9c"
-      }
-    },
-    {
-      "id": "cli-workflow",
-      "type": "CLICommand",
-      "label": "spawnie workflow",
-      "source": {
-        "file": "src/spawnie/__main__.py",
-        "line": 122,
-        "hash": "918077c2aca6f301aa9d159d4d539cc95286b61488d1226c9b942aec6992bc9c"
-      }
-    },
-    {
-      "id": "cli-workflows",
-      "type": "CLICommand",
-      "label": "spawnie workflows",
-      "source": {
-        "file": "src/spawnie/__main__.py",
-        "line": 608,
-        "hash": "918077c2aca6f301aa9d159d4d539cc95286b61488d1226c9b942aec6992bc9c"
-      }
-    },
-    {
-      "id": "cli-monitor",
-      "type": "CLICommand",
-      "label": "spawnie monitor",
-      "source": {
-        "file": "src/spawnie/__main__.py",
-        "line": 380,
-        "hash": "918077c2aca6f301aa9d159d4d539cc95286b61488d1226c9b942aec6992bc9c"
-      }
-    },
-    {
-      "id": "cli-status",
-      "type": "CLICommand",
-      "label": "spawnie status",
-      "source": {
-        "file": "src/spawnie/__main__.py",
-        "line": 183,
-        "hash": "918077c2aca6f301aa9d159d4d539cc95286b61488d1226c9b942aec6992bc9c"
-      }
-    },
-    {
-      "id": "cli-kill",
-      "type": "CLICommand",
-      "label": "spawnie kill",
-      "source": {
-        "file": "src/spawnie/__main__.py",
-        "line": 267,
-        "hash": "918077c2aca6f301aa9d159d4d539cc95286b61488d1226c9b942aec6992bc9c"
-      }
-    },
-
-    {
-      "id": "status-model",
-      "type": "Status",
-      "label": "Model Status",
-      "coverage": {
-        "modules": "10/14 (missing: config, daemon, detection, utils)",
-        "classes": "10/~20 (partial)",
-        "functions": "6/~30 (partial)",
-        "edges": "partial (imports, defines, some uses)"
-      },
-      "health": "incomplete",
-      "last_verified": "2026-01-31T02:00:00Z"
-    },
-
-    {
-      "id": "todo-add-missing-modules",
-      "type": "Todo",
-      "label": "Add missing modules",
-      "description": "Add config.py, daemon.py, detection.py, utils.py to model",
-      "status": "pending",
-      "priority": "high"
-    },
-    {
-      "id": "todo-complete-classes",
-      "type": "Todo",
-      "label": "Complete class coverage",
-      "description": "Add Route, ModelConfig, ProviderConfig, SpawnieConfig, SpawnieDaemon, etc.",
-      "status": "pending",
-      "priority": "medium"
-    },
-    {
-      "id": "todo-add-all-functions",
-      "type": "Todo",
-      "label": "Add all public functions",
-      "description": "Scan modules for all public functions, add to model",
-      "status": "pending",
-      "priority": "medium"
-    },
-    {
-      "id": "todo-complete-edges",
-      "type": "Todo",
-      "label": "Complete edge mapping",
-      "description": "Map all CALLS, USES, IMPORTS edges between nodes",
-      "status": "pending",
-      "priority": "low"
-    },
-    {
-      "id": "todo-update-colors",
-      "type": "Todo",
-      "label": "Update color files",
-      "description": "Color files are stale - need to sync with current sketch",
-      "status": "pending",
-      "priority": "low"
-    },
-
-    {"id": "concept-task-as-workflow", "type": "Concept", "label": "Tasks as Single-Step Workflows"},
-    {"id": "concept-model-routing", "type": "Concept", "label": "Model Routing"},
-    {"id": "concept-parallel-exec", "type": "Concept", "label": "Parallel Step Execution"},
-    {"id": "concept-orphan-detection", "type": "Concept", "label": "Orphan Detection"},
-    {"id": "concept-quality-levels", "type": "Concept", "label": "Quality Levels (Review Strategies)"},
-    {"id": "concept-model-first", "type": "Concept", "label": "Model-First Architecture", "description": "The model is the working vehicle, not files. Workflows, configs, and definitions are nodes in the model. Physical files are optional projections."},
-
-    {
-      "id": "workflow-code-quality",
-      "type": "Workflow",
-      "label": "Code Quality Check",
-      "name": "code-quality-check",
-      "description": "Comprehensive code quality analysis with structured, actionable findings - aligned with seed/BAM architecture",
-      "inputs": {},
-      "steps": {
-        "analyze_structure": {
-          "prompt": "FIRST: Read C:\\seed\\NOTES.md to understand the architectural vision.\n\nAnalyze codebase structure. Look for: file organization issues, import patterns, circular dependencies, code duplication, dead code, BAM alignment.\n\nSOURCE VERIFICATION: Read actual files before claims. Set confidence='speculative' if unverified.\n\nReturn JSON array of findings with: id, title, description, category, severity, confidence, evidence (files_checked, code_refs), suggested_fixes, verified, tags.",
-          "model": "claude-sonnet",
-          "timeout": 420
-        },
-        "check_consistency": {
-          "prompt": "FIRST: Read C:\\seed\\NOTES.md.\n\nReview for consistency: naming conventions, error handling patterns, logging, type annotations, code style, BAM alignment.\n\nReturn JSON array of findings showing conflicting patterns with actual code examples.",
-          "model": "claude-sonnet",
-          "timeout": 420
-        },
-        "find_improvements": {
-          "prompt": "FIRST: Read C:\\seed\\NOTES.md.\n\nIdentify improvements: performance, abstractions, error handling, security, testability, BAM alignment.\n\nReturn JSON array of findings with verified evidence and suggested fixes.",
-          "model": "claude-sonnet",
-          "timeout": 420
-        },
-        "run_tests": {
-          "prompt": "Find and run the test suite. Return JSON with: test_framework, config_files, execution results, failures with tracebacks, coverage if available.",
-          "model": "claude-sonnet",
-          "timeout": 600
-        },
-        "verify_documentation": {
-          "prompt": "FIRST: Read C:\\seed\\NOTES.md.\n\nVerify documentation accuracy: check README claims against code, find undocumented features, check BAM model mention.\n\nReturn JSON array of doc/code mismatches.",
-          "model": "claude-sonnet",
-          "timeout": 420
-        },
-        "agent_usage_feedback": {
-          "prompt": "FIRST: Read C:\\seed\\NOTES.md.\n\nAs an AI agent, evaluate Spawnie's API usability, BAM integration, pain points, and improvement suggestions.\n\nReturn JSON with ratings, pain_points, working_well, bam_alignment, feature_requests.",
-          "model": "claude-sonnet",
-          "timeout": 420
-        },
-        "verify_findings": {
-          "prompt": "Senior reviewer: verify all findings from previous steps by reading actual source files. Reject unverifiable claims.\n\nInputs: {{steps.analyze_structure.output}}, {{steps.check_consistency.output}}, {{steps.find_improvements.output}}, {{steps.run_tests.output}}, {{steps.verify_documentation.output}}, {{steps.agent_usage_feedback.output}}\n\nReturn JSON with: verified_findings, rejected_findings, new_findings.",
-          "model": "claude-sonnet",
-          "depends": ["analyze_structure", "check_consistency", "find_improvements", "run_tests", "verify_documentation", "agent_usage_feedback"],
-          "timeout": 600
-        },
-        "synthesize_report": {
-          "prompt": "Create final structured report from all findings with BAM alignment assessment.\n\nInputs: all previous steps + {{steps.verify_findings.output}}\n\nReturn JSON with: summary (scores, counts), bam_alignment_summary, critical/high/medium/low issues, action_plan, test_summary.",
-          "model": "claude-sonnet",
-          "depends": ["verify_findings"],
-          "timeout": 480
-        }
-      },
-      "outputs": {
-        "final_report": "{{steps.synthesize_report.output}}"
-      },
-      "timeout": 2700
-    },
-
-    {
-      "id": "workflow-reality-check",
-      "type": "Workflow",
-      "label": "Reality Check",
-      "name": "reality-check",
-      "description": "Validates that reality (artifacts) matches the model. Triggered by scheduler or integration requests. Aligned with seed/BAM architecture.",
-      "inputs": {
-        "target": "string",
-        "trigger": "string"
-      },
-      "steps": {
-        "load_context": {
-          "prompt": "FIRST: Read C:\\seed\\NOTES.md.\n\nPerform REALITY CHECK - validate artifacts match model.\n\nTrigger: {{inputs.trigger}}, Target: {{inputs.target}}\n\n1. Read bam/model/sketch.json\n2. Categorize nodes: reality (has hash), aspiration (no hash), meta\n\nReturn JSON with: model_path, total_nodes, node_categories, nodes list, edges list.",
-          "model": "claude-sonnet",
-          "timeout": 180
-        },
-        "verify_reality_nodes": {
-          "prompt": "Verify REALITY NODES from {{steps.load_context.output}}.\n\nFor each node with source.hash: check file exists, compute hash, compare.\n- Match = VERIFIED\n- Differ = STALE\n- Missing = ORPHANED\n\nAlso find UNTRACKED files in src/, tests/, bam/.\n\nReturn JSON with: verified_nodes, stale_nodes, orphaned_nodes, untracked_files, summary.",
-          "model": "claude-sonnet",
-          "depends": ["load_context"],
-          "timeout": 300
-        },
-        "verify_aspiration_nodes": {
-          "prompt": "Verify ASPIRATION NODES from {{steps.load_context.output}}.\n\nFor each aspiration: check if implementation exists, determine status (not_started, in_progress, completed, blocked).\n\nReturn JSON with: aspiration_status, ready_to_promote, blocked_aspirations, summary.",
-          "model": "claude-sonnet",
-          "depends": ["load_context"],
-          "timeout": 300
-        },
-        "check_system_health": {
-          "prompt": "Check SYSTEM HEALTH:\n1. Tracker state (~/.spawnie/tracker.json)\n2. Session state (~/.spawnie/sessions/)\n3. Provider availability (Claude CLI, Copilot CLI)\n4. Config validation\n5. Disk usage\n\nReturn JSON with: overall_health, checks (tracker, sessions, providers, config, disk), recommended_actions.",
-          "model": "claude-sonnet",
-          "timeout": 180
-        },
-        "check_model_integrity": {
-          "prompt": "Check MODEL INTEGRITY from {{steps.load_context.output}}:\n1. Node integrity (required fields, no duplicates)\n2. Edge integrity (valid references)\n3. Hierarchy (no cycles, orphans)\n4. Schema compliance\n\nReturn JSON with: integrity_status, node_issues, edge_issues, hierarchy_issues, orphan_nodes, summary.",
-          "model": "claude-sonnet",
-          "depends": ["load_context"],
-          "timeout": 180
-        },
-        "synthesize_reality_report": {
-          "prompt": "Create REALITY CHECK REPORT from all verification results.\n\nInputs: {{steps.load_context.output}}, {{steps.verify_reality_nodes.output}}, {{steps.verify_aspiration_nodes.output}}, {{steps.check_system_health.output}}, {{steps.check_model_integrity.output}}\n\nReturn JSON with: reality_check (status), model_reality_alignment (score), aspiration_progress, system_health, model_integrity, drift_summary, action_plan, next_check.",
-          "model": "claude-sonnet",
-          "depends": ["verify_reality_nodes", "verify_aspiration_nodes", "check_system_health", "check_model_integrity"],
-          "timeout": 300
-        }
-      },
-      "outputs": {
-        "reality_report": "{{steps.synthesize_reality_report.output}}"
-      },
-      "timeout": 1200
-    },
-
-    {
-      "id": "workflow-binary-search",
-      "type": "Workflow",
-      "label": "Binary Search Analysis",
-      "name": "binary-search-analysis",
-      "description": "Example workflow: analyze binary search algorithm",
-      "inputs": {},
-      "steps": {
-        "step1_analyze": {
-          "prompt": "Write a detailed 200-word explanation of how binary search works. Include an example.",
-          "model": "claude-haiku",
-          "timeout": 120
-        },
-        "step2_summarize": {
-          "prompt": "Summarize in exactly 3 bullet points:\n\n{{steps.step1_analyze.output}}",
-          "model": "claude-haiku",
-          "depends": ["step1_analyze"],
-          "timeout": 120
-        }
-      },
-      "outputs": {
-        "analysis": "{{steps.step1_analyze.output}}",
-        "summary": "{{steps.step2_summarize.output}}"
-      },
-      "timeout": 300
-    },
-
-    {
-      "id": "workflow-merge-sort",
-      "type": "Workflow",
-      "label": "Merge Sort Analysis",
-      "name": "merge-sort-analysis",
-      "description": "Example workflow: analyze merge sort algorithm",
-      "inputs": {},
-      "steps": {
-        "step1_research": {
-          "prompt": "Write a detailed 200-word explanation of how merge sort works. Include an example.",
-          "model": "claude-haiku",
-          "timeout": 120
-        },
-        "step2_compare": {
-          "prompt": "List 3 pros and 3 cons of merge sort:\n\n{{steps.step1_research.output}}",
-          "model": "claude-haiku",
-          "depends": ["step1_research"],
-          "timeout": 120
-        }
-      },
-      "outputs": {
-        "research": "{{steps.step1_research.output}}",
-        "comparison": "{{steps.step2_compare.output}}"
-      },
-      "timeout": 300
-    },
-
-    {
-      "id": "workflow-complete-model",
-      "type": "Workflow",
-      "label": "Complete Model Coverage",
-      "name": "complete-model",
-      "description": "Phase 1: Complete the BAM model with full coverage of all modules, classes, and functions. Uses subspawns for parallel analysis.",
-      "inputs": {
-        "target_dir": "string"
-      },
-      "steps": {
-        "scan_codebase": {
-          "prompt": "FIRST: Read C:\\seed\\NOTES.md to understand the seed/BAM architecture.\n\nYou are completing the BAM model for spawnie. The model must be the source of truth.\n\nTarget directory: {{inputs.target_dir}}\n\n1. Read the current model at bam/model/sketch.json\n2. List all Python files in src/spawnie/\n3. Identify which modules are MISSING from the model\n4. For each existing module node, check if it's complete\n\nCurrent model has these modules:\n- api.py, tracker.py, workflow.py, registry.py, session.py, monitor.py, __main__.py\n- providers/base.py, providers/claude.py, findings.py\n\nFind what's missing (likely: config.py, daemon.py, detection.py, utils.py, models.py, queue.py, etc.)\n\nReturn JSON:\n```json\n{\n  \"existing_modules\": [\"list of modules in model\"],\n  \"missing_modules\": [\"list of .py files not in model\"],\n  \"incomplete_modules\": [{\"module\": \"name\", \"missing\": [\"classes\", \"functions\"]}],\n  \"total_files\": 20,\n  \"coverage_percent\": 50\n}\n```",
-          "model": "claude-sonnet",
-          "timeout": 900
-        },
-        "analyze_missing_modules": {
-          "prompt": "FIRST: Read C:\\seed\\NOTES.md.\n\nYou have the scan results: {{steps.scan_codebase.output}}\n\nFor each MISSING module, use subspawns to analyze in parallel:\n\n```bash\n# For each missing module, spawn analysis\nspawnie run \"Analyze src/spawnie/MODULE.py: List all classes, functions, dataclasses with line numbers. Return JSON with: module_path, classes [{name, line, methods, docstring}], functions [{name, line, params, returns, docstring}], dataclasses [{name, line, fields}], imports [list]\" -m claude-sonnet\n```\n\nRun spawnie subspawns for each missing module. Collect results.\n\nReturn consolidated JSON:\n```json\n{\n  \"modules_analyzed\": [\n    {\n      \"path\": \"src/spawnie/config.py\",\n      \"classes\": [{\"name\": \"SpawnieConfig\", \"line\": 10, \"methods\": []}],\n      \"functions\": [{\"name\": \"get_config\", \"line\": 50, \"params\": [], \"returns\": \"SpawnieConfig\"}],\n      \"dataclasses\": [],\n      \"imports\": [\"json\", \"pathlib\"]\n    }\n  ]\n}\n```",
-          "model": "claude-sonnet",
-          "depends": ["scan_codebase"],
-          "timeout": 1800
-        },
-        "analyze_incomplete_modules": {
-          "prompt": "FIRST: Read C:\\seed\\NOTES.md.\n\nScan results: {{steps.scan_codebase.output}}\n\nFor each INCOMPLETE module (exists in model but missing classes/functions), use subspawns:\n\n```bash\nspawnie run \"Read src/spawnie/MODULE.py and compare to model. Find classes and functions NOT in the model. Return JSON with missing items.\" -m claude-sonnet\n```\n\nReturn JSON:\n```json\n{\n  \"modules_completed\": [\n    {\n      \"path\": \"src/spawnie/tracker.py\",\n      \"existing_in_model\": [\"Tracker\", \"TaskState\"],\n      \"missing_from_model\": [\n        {\"type\": \"class\", \"name\": \"Alert\", \"line\": 80},\n        {\"type\": \"function\", \"name\": \"cleanup_stale\", \"line\": 200}\n      ]\n    }\n  ]\n}\n```",
-          "model": "claude-sonnet",
-          "depends": ["scan_codebase"],
-          "timeout": 1800
-        },
-        "generate_model_updates": {
-          "prompt": "FIRST: Read C:\\seed\\NOTES.md.\n\nYou have analysis from:\n- Missing modules: {{steps.analyze_missing_modules.output}}\n- Incomplete modules: {{steps.analyze_incomplete_modules.output}}\n\nGenerate the JSON nodes and edges to add to bam/model/sketch.json.\n\nFor each new module, create:\n1. Module node with source.file and source.hash\n2. Class nodes for each class\n3. Function nodes for public functions\n4. Dataclass nodes for dataclasses\n5. DEFINES edges from module to its contents\n6. IMPORTS edges between modules\n\nCompute hashes using: sha256sum src/spawnie/file.py\n\nReturn JSON:\n```json\n{\n  \"new_nodes\": [\n    {\n      \"id\": \"mod-config\",\n      \"type\": \"Module\",\n      \"label\": \"config.py\",\n      \"source\": {\"file\": \"src/spawnie/config.py\", \"hash\": \"abc123...\"}\n    }\n  ],\n  \"new_edges\": [\n    {\"type\": \"DEFINES\", \"from\": \"mod-config\", \"to\": \"cls-spawnie-config\"}\n  ],\n  \"updated_status\": {\n    \"coverage\": {\"modules\": \"14/14\", \"classes\": \"20/20\"},\n    \"health\": \"complete\"\n  }\n}\n```",
-          "model": "claude-sonnet",
-          "depends": ["analyze_missing_modules", "analyze_incomplete_modules"],
-          "timeout": 1200
-        },
-        "apply_updates": {
-          "prompt": "FIRST: Read C:\\seed\\NOTES.md.\n\nYou have the model updates: {{steps.generate_model_updates.output}}\n\n1. Read current bam/model/sketch.json\n2. Add all new_nodes to the nodes array\n3. Add all new_edges to the edges array\n4. Update the status-model node with new coverage\n5. Update the updated_at timestamp\n6. Write the updated model back\n\nVerify the JSON is valid before writing.\n\nReturn:\n```json\n{\n  \"success\": true,\n  \"nodes_added\": 15,\n  \"edges_added\": 25,\n  \"new_total_nodes\": 71,\n  \"new_total_edges\": 96,\n  \"model_path\": \"bam/model/sketch.json\"\n}\n```",
-          "model": "claude-sonnet",
-          "depends": ["generate_model_updates"],
-          "timeout": 600
-        },
-        "verify_model": {
-          "prompt": "FIRST: Read C:\\seed\\NOTES.md.\n\nVerify the updated model:\n\n1. Read bam/model/sketch.json\n2. Check all nodes have required fields (id, type, label)\n3. Check all edges reference existing nodes\n4. For nodes with source.hash, verify hash matches actual file\n5. Check for orphan nodes (not connected)\n\nRun: sha256sum src/spawnie/*.py to get actual hashes\n\nReturn:\n```json\n{\n  \"valid\": true,\n  \"total_nodes\": 71,\n  \"total_edges\": 96,\n  \"hash_verification\": {\n    \"checked\": 14,\n    \"matched\": 14,\n    \"mismatched\": 0\n  },\n  \"integrity_issues\": [],\n  \"orphan_nodes\": []\n}\n```",
-          "model": "claude-sonnet",
-          "depends": ["apply_updates"],
-          "timeout": 900
-        }
-      },
-      "outputs": {
-        "scan_results": "{{steps.scan_codebase.output}}",
-        "missing_analysis": "{{steps.analyze_missing_modules.output}}",
-        "incomplete_analysis": "{{steps.analyze_incomplete_modules.output}}",
-        "model_updates": "{{steps.generate_model_updates.output}}",
-        "apply_results": "{{steps.apply_updates.output}}",
-        "verification": "{{steps.verify_model.output}}"
-      },
-      "timeout": 7200
     },
 
     {
       "id": "config-spawnie",
       "type": "Config",
-      "label": "Spawnie Configuration",
-      "description": "Model-first configuration: providers, model routes, preferences",
+      "label": "Configuration",
+      "description": "Model-first configuration",
       "providers": {
-        "claude-cli": {
-          "type": "cli",
-          "command": "claude"
-        },
-        "copilot-cli": {
-          "type": "cli",
-          "command": "gh copilot"
-        },
-        "anthropic-api": {
-          "type": "api",
-          "api_key_env": "ANTHROPIC_API_KEY"
-        },
-        "openai-api": {
-          "type": "api",
-          "api_key_env": "OPENAI_API_KEY"
-        },
-        "mock": {
-          "type": "mock"
-        }
+        "claude-cli": {"type": "cli", "command": "claude"},
+        "copilot-cli": {"type": "cli", "command": "gh copilot"},
+        "anthropic-api": {"type": "api", "api_key_env": "ANTHROPIC_API_KEY"},
+        "mock": {"type": "mock"}
       },
       "models": {
         "claude-sonnet": {
           "routes": [
             {"provider": "claude-cli", "priority": 1, "model_id": "sonnet"},
             {"provider": "anthropic-api", "priority": 2, "model_id": "claude-sonnet-4-20250514"}
-          ],
-          "description": "Claude Sonnet - balanced performance"
+          ]
         },
         "claude-opus": {
           "routes": [
             {"provider": "claude-cli", "priority": 1, "model_id": "opus"},
             {"provider": "anthropic-api", "priority": 2, "model_id": "claude-opus-4-20250514"}
-          ],
-          "description": "Claude Opus - highest capability"
+          ]
         },
         "claude-haiku": {
           "routes": [
             {"provider": "claude-cli", "priority": 1, "model_id": "haiku"},
             {"provider": "anthropic-api", "priority": 2, "model_id": "claude-haiku-3-20250414"}
-          ],
-          "description": "Claude Haiku - fast and efficient"
-        },
-        "test-mock": {
-          "routes": [
-            {"provider": "mock", "priority": 1, "model_id": null}
-          ],
-          "description": "Mock provider for testing"
+          ]
         }
       },
-      "preferences": {
-        "prefer_cli": true
-      }
+      "preferences": {"prefer_cli": true}
+    },
+
+    {
+      "id": "concept-model-first",
+      "type": "Concept",
+      "label": "Model-First Architecture",
+      "description": "The model is the working vehicle. Workflows, configs, definitions are nodes. Physical files are projections."
+    },
+    {
+      "id": "concept-hierarchical-bam",
+      "type": "Concept",
+      "label": "Hierarchical BAMs",
+      "description": "Nodes contain sub-BAMs. Zoom in for detail, zoom out for overview."
+    },
+    {
+      "id": "concept-layers-as-lenses",
+      "type": "Concept",
+      "label": "Layers as Lenses",
+      "description": "Aspiration (why), Design (what), Execution (now), Reality (is) - perspectives, not categories."
+    },
+
+    {
+      "id": "aspiration-seed-first",
+      "type": "Aspiration",
+      "label": "First Seed-Native System",
+      "description": "Spawnie should be the first system fully embracing seed philosophy: model-first, hierarchical BAMs, layers as lenses.",
+      "status": "in-progress"
+    },
+    {
+      "id": "aspiration-self-describing",
+      "type": "Aspiration",
+      "label": "Self-Describing Model",
+      "description": "The model should fully describe spawnie. Given the model, spawnie could be regenerated.",
+      "status": "future"
     }
   ],
 
   "edges": [
-    {"type": "IMPORTS", "from": "mod-api", "to": "mod-workflow"},
-    {"type": "IMPORTS", "from": "mod-api", "to": "mod-tracker"},
-    {"type": "IMPORTS", "from": "mod-workflow", "to": "mod-tracker"},
-    {"type": "IMPORTS", "from": "mod-workflow", "to": "mod-registry"},
-    {"type": "IMPORTS", "from": "mod-workflow", "to": "mod-providers-base"},
-    {"type": "IMPORTS", "from": "mod-session", "to": "mod-tracker"},
-    {"type": "IMPORTS", "from": "mod-monitor", "to": "mod-tracker"},
-    {"type": "IMPORTS", "from": "mod-main", "to": "mod-api"},
-    {"type": "IMPORTS", "from": "mod-providers-claude", "to": "mod-providers-base"},
-
-    {"type": "DEFINES", "from": "mod-tracker", "to": "cls-tracker"},
-    {"type": "DEFINES", "from": "mod-tracker", "to": "dc-task-state"},
-    {"type": "DEFINES", "from": "mod-tracker", "to": "dc-workflow-state"},
-    {"type": "DEFINES", "from": "mod-tracker", "to": "dc-step-state"},
-    {"type": "DEFINES", "from": "mod-tracker", "to": "fn-get-tracker"},
-    {"type": "DEFINES", "from": "mod-workflow", "to": "cls-workflow-executor"},
-    {"type": "DEFINES", "from": "mod-workflow", "to": "cls-workflow-def"},
-    {"type": "DEFINES", "from": "mod-workflow", "to": "dc-step-definition"},
-    {"type": "DEFINES", "from": "mod-workflow", "to": "dc-workflow-result"},
-    {"type": "DEFINES", "from": "mod-session", "to": "cls-shell-session"},
-    {"type": "DEFINES", "from": "mod-registry", "to": "cls-registry"},
-    {"type": "DEFINES", "from": "mod-registry", "to": "fn-get-registry"},
-    {"type": "DEFINES", "from": "mod-providers-base", "to": "cls-cli-provider"},
-    {"type": "DEFINES", "from": "mod-providers-claude", "to": "cls-claude-provider"},
-    {"type": "DEFINES", "from": "mod-monitor", "to": "cls-monitor-app"},
-    {"type": "DEFINES", "from": "mod-monitor", "to": "fn-run-monitor"},
-    {"type": "DEFINES", "from": "mod-api", "to": "fn-run"},
-    {"type": "DEFINES", "from": "mod-api", "to": "fn-execute"},
-    {"type": "DEFINES", "from": "mod-api", "to": "fn-spawn"},
-    {"type": "DEFINES", "from": "mod-findings", "to": "cls-finding"},
-    {"type": "DEFINES", "from": "mod-findings", "to": "cls-findings-report"},
-    {"type": "DEFINES", "from": "mod-findings", "to": "dc-code-reference"},
-    {"type": "DEFINES", "from": "mod-findings", "to": "dc-evidence"},
-    {"type": "DEFINES", "from": "mod-findings", "to": "dc-suggested-fix"},
-
-    {"type": "INHERITS", "from": "cls-claude-provider", "to": "cls-cli-provider"},
-
-    {"type": "USES", "from": "cls-workflow-executor", "to": "cls-tracker"},
-    {"type": "USES", "from": "cls-workflow-executor", "to": "dc-task-state"},
-    {"type": "USES", "from": "cls-workflow-executor", "to": "dc-workflow-state"},
-    {"type": "USES", "from": "cls-workflow-executor", "to": "dc-step-definition"},
-    {"type": "USES", "from": "cls-shell-session", "to": "cls-tracker"},
-    {"type": "USES", "from": "cls-monitor-app", "to": "cls-tracker"},
-    {"type": "USES", "from": "cls-tracker", "to": "dc-task-state"},
-    {"type": "USES", "from": "cls-tracker", "to": "dc-workflow-state"},
-    {"type": "USES", "from": "cls-tracker", "to": "dc-step-state"},
-    {"type": "USES", "from": "cls-findings-report", "to": "cls-finding"},
-    {"type": "USES", "from": "cls-finding", "to": "dc-evidence"},
-    {"type": "USES", "from": "cls-finding", "to": "dc-suggested-fix"},
-    {"type": "USES", "from": "dc-evidence", "to": "dc-code-reference"},
-
-    {"type": "CALLS", "from": "fn-run", "to": "cls-workflow-executor"},
-    {"type": "CALLS", "from": "fn-execute", "to": "cls-workflow-executor"},
-    {"type": "CALLS", "from": "cls-workflow-executor", "to": "cls-cli-provider"},
-
-    {"type": "IMPLEMENTS", "from": "cli-run", "to": "fn-run"},
-    {"type": "IMPLEMENTS", "from": "cli-workflow", "to": "fn-execute"},
-    {"type": "IMPLEMENTS", "from": "cli-monitor", "to": "fn-run-monitor"},
-
-    {"type": "EMBODIES", "from": "mod-api", "to": "concept-task-as-workflow"},
-    {"type": "EMBODIES", "from": "mod-registry", "to": "concept-model-routing"},
-    {"type": "EMBODIES", "from": "mod-workflow", "to": "concept-parallel-exec"},
-    {"type": "EMBODIES", "from": "mod-tracker", "to": "concept-orphan-detection"},
-    {"type": "EMBODIES", "from": "mod-workflow", "to": "concept-quality-levels"},
-
-    {"type": "NEEDS", "from": "status-model", "to": "todo-add-missing-modules"},
-    {"type": "NEEDS", "from": "status-model", "to": "todo-complete-classes"},
-    {"type": "NEEDS", "from": "status-model", "to": "todo-add-all-functions"},
-    {"type": "NEEDS", "from": "status-model", "to": "todo-complete-edges"},
-    {"type": "NEEDS", "from": "status-model", "to": "todo-update-colors"},
-
-    {"type": "BLOCKED_BY", "from": "todo-complete-edges", "to": "todo-add-missing-modules"},
-    {"type": "BLOCKED_BY", "from": "todo-complete-edges", "to": "todo-complete-classes"},
-    {"type": "BLOCKED_BY", "from": "todo-update-colors", "to": "todo-add-missing-modules"},
-
-    {"type": "USES_MODEL", "from": "workflow-code-quality", "to": "concept-model-first"},
-    {"type": "USES_MODEL", "from": "workflow-reality-check", "to": "concept-model-first"},
-    {"type": "USES_MODEL", "from": "workflow-binary-search", "to": "concept-model-first"},
-    {"type": "USES_MODEL", "from": "workflow-merge-sort", "to": "concept-model-first"},
-    {"type": "USES_MODEL", "from": "workflow-complete-model", "to": "concept-model-first"},
-    {"type": "EMBODIES", "from": "workflow-reality-check", "to": "concept-orphan-detection"}
+    {"type": "EMBODIES", "from": "subsystem-core", "to": "concept-model-first"},
+    {"type": "EMBODIES", "from": "subsystem-workflows", "to": "concept-model-first"},
+    {"type": "EMBODIES", "from": "subsystem-core", "to": "concept-hierarchical-bam"},
+    {"type": "IMPLEMENTS", "from": "subsystem-workflows", "to": "aspiration-seed-first"},
+    {"type": "IMPLEMENTS", "from": "config-spawnie", "to": "aspiration-seed-first"}
   ]
 }

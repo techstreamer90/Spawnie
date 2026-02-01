@@ -936,11 +936,36 @@ def get_model_path() -> Path:
     return candidates[0]  # Default to first even if not exists
 
 
+def _find_workflows_recursive(nodes: list) -> list[dict]:
+    """Recursively search for Workflow nodes in hierarchical BAM structure."""
+    workflows = []
+    for node in nodes:
+        if node.get("type") == "Workflow":
+            workflows.append({
+                "id": node.get("id"),
+                "name": node.get("name", node.get("id")),
+                "label": node.get("label"),
+                "description": node.get("description", ""),
+                "inputs": node.get("inputs", {}),
+                "steps": node.get("steps", {}),
+                "outputs": node.get("outputs", {}),
+                "timeout": node.get("timeout"),
+                "source": "model",
+            })
+        # Check for sub-BAM (hierarchical model)
+        sub_model = node.get("model")
+        if isinstance(sub_model, dict) and "nodes" in sub_model:
+            workflows.extend(_find_workflows_recursive(sub_model["nodes"]))
+    return workflows
+
+
 def get_workflows_from_model() -> list[dict]:
     """Read workflow nodes from the BAM model (source of truth).
 
     Model-first architecture: workflows are nodes in the model,
     not physical files. Physical files are optional projections.
+
+    Supports hierarchical BAMs - searches recursively through sub-models.
     """
     model_path = get_model_path()
     if not model_path.exists():
@@ -950,21 +975,7 @@ def get_workflows_from_model() -> list[dict]:
         with open(model_path, "r") as f:
             model = json.load(f)
 
-        workflows = []
-        for node in model.get("nodes", []):
-            if node.get("type") == "Workflow":
-                workflows.append({
-                    "id": node.get("id"),
-                    "name": node.get("name", node.get("id")),
-                    "label": node.get("label"),
-                    "description": node.get("description", ""),
-                    "inputs": node.get("inputs", {}),
-                    "steps": node.get("steps", {}),
-                    "outputs": node.get("outputs", {}),
-                    "timeout": node.get("timeout"),
-                    "source": "model",
-                })
-        return workflows
+        return _find_workflows_recursive(model.get("nodes", []))
     except Exception:
         return []
 

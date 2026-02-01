@@ -21,11 +21,32 @@ logger = logging.getLogger("spawnie.registry")
 DEFAULT_CONFIG_PATH = Path.home() / ".spawnie" / "config.json"
 
 
+def _find_config_recursive(nodes: list) -> dict | None:
+    """Recursively search for Config node in hierarchical BAM structure."""
+    for node in nodes:
+        if node.get("type") == "Config":
+            return {
+                "providers": node.get("providers", {}),
+                "models": node.get("models", {}),
+                "preferences": node.get("preferences", {}),
+                "source": "model",
+            }
+        # Check for sub-BAM (hierarchical model)
+        sub_model = node.get("model")
+        if isinstance(sub_model, dict) and "nodes" in sub_model:
+            result = _find_config_recursive(sub_model["nodes"])
+            if result:
+                return result
+    return None
+
+
 def get_config_from_model() -> dict | None:
     """Read config from BAM model (source of truth).
 
     Model-first architecture: config is a node in the model,
     physical config.json is a fallback.
+
+    Supports hierarchical BAMs - searches recursively through sub-models.
     """
     # Check multiple possible model locations
     candidates = [
@@ -39,15 +60,7 @@ def get_config_from_model() -> dict | None:
                 with open(model_path, "r", encoding="utf-8") as f:
                     model = json.load(f)
 
-                # Find Config node
-                for node in model.get("nodes", []):
-                    if node.get("type") == "Config":
-                        return {
-                            "providers": node.get("providers", {}),
-                            "models": node.get("models", {}),
-                            "preferences": node.get("preferences", {}),
-                            "source": "model",
-                        }
+                return _find_config_recursive(model.get("nodes", []))
             except Exception as e:
                 logger.debug(f"Could not read config from model: {e}")
 
