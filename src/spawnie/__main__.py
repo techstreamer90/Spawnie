@@ -521,43 +521,65 @@ def _spawn_new_window(args: argparse.Namespace) -> int:
         "prompt": args.task,
     }, indent=2), encoding="utf-8")
 
-    # Escape the task for shell
-    task = args.task.replace('"', '\\"')
-
     if sys.platform == "win32":
-        # Windows: use PowerShell with Tee-Object to log output
+        # Windows: write a PowerShell script and execute it
         wt_path = shutil.which("wt")
 
-        # PowerShell command that runs claude and tees to log file
-        ps_cmd = f'''
-$host.UI.RawUI.WindowTitle = "Spawnie: {model} [{session_id}]"
-Write-Output "Session: {session_id}" | Tee-Object -FilePath "{log_file}"
-Write-Output "Prompt: {task}" | Tee-Object -FilePath "{log_file}" -Append
-Write-Output "---" | Tee-Object -FilePath "{log_file}" -Append
-& "{claude_path}" --model {model} "{task}" 2>&1 | Tee-Object -FilePath "{log_file}" -Append
-'''
+        # Write prompt to a file
+        prompt_file.write_text(args.task, encoding="utf-8")
 
-        if wt_path:
-            # Windows Terminal
-            cmd = [
-                wt_path,
-                "--title", f"Spawnie: {model}",
-                "-d", str(working_dir),
-                "powershell", "-NoExit", "-Command", ps_cmd
-            ]
+        # Find python and the helper script
+        python_path = sys.executable
+        helper_path = Path(__file__).parent / "stdin_helper.py"
+
+        # Check for winpty (comes with Git for Windows) for proper PTY support
+        winpty_path = shutil.which("winpty")
+
+        # Write batch file
+        batch_file = session_dir / "run.cmd"
+
+        # Escape the task for batch file (double quotes and special chars)
+        task_escaped = args.task.replace('"', '""')
+
+        if winpty_path:
+            # Use winpty to ensure proper PTY for Claude
+            batch_content = f'''@echo off
+title Spawnie: {model} [{session_id}]
+cd /d "{working_dir}"
+echo Session: {session_id}
+echo Model: {model}
+echo.
+echo --- Starting Claude ---
+echo.
+"{winpty_path}" "{claude_path}" --model {model} "{task_escaped}"
+'''
         else:
-            # Fallback to cmd launching powershell
-            cmd = [
-                "powershell", "-NoExit", "-Command",
-                f"Start-Process powershell -ArgumentList '-NoExit', '-Command', '{ps_cmd}'"
-            ]
+            # Run claude directly with prompt as argument (should be interactive)
+            batch_content = f'''@echo off
+title Spawnie: {model} [{session_id}]
+cd /d "{working_dir}"
+echo Session: {session_id}
+echo Model: {model}
+echo.
+echo --- Starting Claude ---
+echo.
+"{claude_path}" --model {model} "{task_escaped}"
+'''
+        batch_file.write_text(batch_content, encoding="utf-8")
+
+        # Use cmd to run the batch file in a new window
+        if wt_path:
+            cmd = [wt_path, "--title", f"Spawnie: {model}", "-d", str(working_dir), "cmd", "/c", str(batch_file)]
+        else:
+            cmd = ["cmd", "/c", "start", f"Spawnie: {model}", str(batch_file)]
 
         subprocess.Popen(cmd, cwd=working_dir, shell=False)
 
     elif sys.platform == "darwin":
         # macOS: use script command to log
-        script_cmd = f'script -q "{log_file}" {claude_path} --model {model} "{task}"'
-        claude_cmd = f'cd "{working_dir}" && echo "Session: {session_id}" && echo "Prompt: {task}" && echo "---" && {script_cmd}'
+        task_escaped = args.task.replace('"', '\\"')
+        script_cmd = f'script -q "{log_file}" {claude_path} --model {model} "{task_escaped}"'
+        claude_cmd = f'cd "{working_dir}" && echo "Session: {session_id}" && echo "Prompt: {task_escaped}" && echo "---" && {script_cmd}'
         apple_script = f'''
         tell application "Terminal"
             do script "{claude_cmd}"
@@ -568,7 +590,8 @@ Write-Output "---" | Tee-Object -FilePath "{log_file}" -Append
 
     else:
         # Linux: use script command to log
-        script_cmd = f'echo "Session: {session_id}" | tee "{log_file}" && echo "Prompt: {task}" | tee -a "{log_file}" && echo "---" | tee -a "{log_file}" && script -q -c \'{claude_path} --model {model} "{task}"\' -a "{log_file}"'
+        task_escaped = args.task.replace('"', '\\"').replace("'", "'\\''")
+        script_cmd = f'echo "Session: {session_id}" | tee "{log_file}" && echo "Prompt: {task_escaped}" | tee -a "{log_file}" && echo "---" | tee -a "{log_file}" && script -q -c \'{claude_path} --model {model} "{task_escaped}"\' -a "{log_file}"'
 
         terminals = [
             ("gnome-terminal", ["gnome-terminal", "--", "bash", "-c", script_cmd]),
