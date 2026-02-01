@@ -283,10 +283,10 @@ spawnie monitor
 ```
 
 Opens a terminal UI showing:
-- Active workflows with step progress
-- Running tasks
+- Active workflows with step progress (hierarchical task display)
+- Running tasks with parent/child relationships
 - Recent alerts
-- Live stats (completed/failed today)
+- Live stats: completed/failed today, success rate, total runtime, model usage
 
 Press `s` to save a screenshot as SVG.
 
@@ -392,10 +392,16 @@ spawnie models             # List models and availability
 # Run prompts
 spawnie run "prompt" -m MODEL           # Blocking (default)
 spawnie run "prompt" -m MODEL --mode async   # Returns task ID
+spawnie run "prompt" -m MODEL -q extra-clean # With quality level
 
 # Workflows
 spawnie workflow FILE -i key=value      # Execute workflow
 spawnie guidance                        # Show workflow JSON guide
+
+# Workflows Library
+spawnie workflows list                  # List library workflows
+spawnie workflows show NAME             # Show workflow definition
+spawnie workflows run NAME -i key=val   # Run from library
 
 # Monitoring
 spawnie monitor               # TUI monitor (recommended)
@@ -409,12 +415,52 @@ spawnie detect claude         # Check Claude CLI availability
 spawnie detect copilot        # Check Copilot CLI availability
 ```
 
+## Workflows Library
+
+Store reusable workflows in `~/.spawnie/workflows/`:
+
+```bash
+# List available workflows
+spawnie workflows list
+
+# Show workflow definition
+spawnie workflows show my-workflow
+
+# Run a workflow from the library
+spawnie workflows run my-workflow -i param=value
+```
+
+Workflows are JSON files. See the `Workflow JSON Format` section above for the schema.
+
+## Quality Levels
+
+Control output quality with the `-q` flag:
+
+```bash
+# Normal - single pass (default, fastest)
+spawnie run "prompt" -m claude-sonnet -q normal
+
+# Extra-clean - self-review pass (catches errors)
+spawnie run "prompt" -m claude-sonnet -q extra-clean
+
+# Hypertask - dual expert review (highest quality)
+spawnie run "prompt" -m claude-sonnet -q hypertask
+```
+
+| Level | Passes | Use Case |
+|-------|--------|----------|
+| `normal` | 1 | Quick tasks, exploration |
+| `extra-clean` | 2 | Production code, important outputs |
+| `hypertask` | 3+ | Critical decisions, complex analysis |
+
 ## File Structure
 
 ```
 ~/.spawnie/
 ├── config.json       # Model registry and provider config
 ├── tracker.json      # Real-time state (workflows, tasks, alerts)
+├── workflows/        # Reusable workflow library
+│   └── my-workflow.json
 └── history/          # Archived completed workflows
     └── 2024-01-15.jsonl
 ```
