@@ -480,8 +480,89 @@ def cmd_done(args: argparse.Namespace) -> int:
         return 1
 
 
+def _spawn_new_window(args: argparse.Namespace) -> int:
+    """Spawn a new terminal window with an interactive agent."""
+    import shutil
+    import subprocess
+
+    working_dir = Path(args.working_dir) if args.working_dir else Path.cwd()
+
+    # Find claude CLI
+    claude_path = shutil.which("claude")
+    if not claude_path:
+        print("Error: Claude CLI not found in PATH", file=sys.stderr)
+        return 1
+
+    # Build the claude command
+    model = args.model.replace("claude-", "") if args.model.startswith("claude-") else args.model
+
+    # Escape the task for shell
+    task = args.task.replace('"', '\\"')
+
+    if sys.platform == "win32":
+        # Windows: use 'start' to open new window
+        # Use cmd /k to keep window open, or wt (Windows Terminal) if available
+        wt_path = shutil.which("wt")
+
+        if wt_path:
+            # Windows Terminal - nicer experience
+            cmd = [
+                wt_path,
+                "--title", f"Spawnie: {model}",
+                "-d", str(working_dir),
+                claude_path, "--model", model, task
+            ]
+        else:
+            # Fallback to cmd
+            claude_cmd = f'"{claude_path}" --model {model} "{task}"'
+            cmd = ["cmd", "/c", "start", f"Spawnie: {model}", "cmd", "/k", claude_cmd]
+
+        subprocess.Popen(cmd, cwd=working_dir, shell=False)
+
+    elif sys.platform == "darwin":
+        # macOS: use osascript to open Terminal
+        claude_cmd = f'cd "{working_dir}" && "{claude_path}" --model {model} "{task}"'
+        apple_script = f'''
+        tell application "Terminal"
+            do script "{claude_cmd}"
+            activate
+        end tell
+        '''
+        subprocess.Popen(["osascript", "-e", apple_script])
+
+    else:
+        # Linux: try common terminal emulators
+        terminals = [
+            ("gnome-terminal", ["gnome-terminal", "--", claude_path, "--model", model, task]),
+            ("konsole", ["konsole", "-e", claude_path, "--model", model, task]),
+            ("xfce4-terminal", ["xfce4-terminal", "-e", f"{claude_path} --model {model} '{task}'"]),
+            ("xterm", ["xterm", "-e", claude_path, "--model", model, task]),
+        ]
+
+        launched = False
+        for term_name, term_cmd in terminals:
+            if shutil.which(term_name):
+                subprocess.Popen(term_cmd, cwd=working_dir)
+                launched = True
+                break
+
+        if not launched:
+            print("Error: No supported terminal emulator found", file=sys.stderr)
+            print("Tried: gnome-terminal, konsole, xfce4-terminal, xterm", file=sys.stderr)
+            return 1
+
+    print(f"Spawned new window with {model} agent")
+    print(f"Working directory: {working_dir}")
+    return 0
+
+
 def cmd_shell(args: argparse.Namespace) -> int:
     """Start an interactive shell session."""
+
+    # New window mode: spawn a new terminal window for direct interaction
+    if args.new_window:
+        return _spawn_new_window(args)
+
     session = ShellSession(
         working_dir=Path(args.working_dir) if args.working_dir else None,
     )
@@ -979,6 +1060,7 @@ def main() -> int:
     shell_parser.add_argument("--timeout", type=int, default=3600, help="Session timeout in seconds")
     shell_parser.add_argument("-i", "--interactive", action="store_true", help="Interactive mode (answer questions)")
     shell_parser.add_argument("-b", "--background", action="store_true", help="Start in background, return session ID immediately")
+    shell_parser.add_argument("-n", "--new-window", action="store_true", help="Spawn in a new terminal window for direct interaction")
     shell_parser.add_argument("--json", action="store_true", help="Output as JSON (for --background)")
 
     # session-events command - get events from a session
