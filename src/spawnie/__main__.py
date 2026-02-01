@@ -919,62 +919,176 @@ def cmd_session_kill(args: argparse.Namespace) -> int:
 # =============================================================================
 
 def get_workflows_library_dir() -> Path:
-    """Get the workflows library directory."""
+    """Get the workflows library directory (for file-based fallback)."""
     return Path.home() / ".spawnie" / "workflows"
 
 
+def get_model_path() -> Path:
+    """Get the BAM model path. Model is source of truth for workflows."""
+    # Check multiple possible locations
+    candidates = [
+        Path.cwd() / "bam" / "model" / "sketch.json",  # Current project
+        Path("C:/spawnie/bam/model/sketch.json"),       # Spawnie install
+    ]
+    for path in candidates:
+        if path.exists():
+            return path
+    return candidates[0]  # Default to first even if not exists
+
+
+def get_workflows_from_model() -> list[dict]:
+    """Read workflow nodes from the BAM model (source of truth).
+
+    Model-first architecture: workflows are nodes in the model,
+    not physical files. Physical files are optional projections.
+    """
+    model_path = get_model_path()
+    if not model_path.exists():
+        return []
+
+    try:
+        with open(model_path, "r") as f:
+            model = json.load(f)
+
+        workflows = []
+        for node in model.get("nodes", []):
+            if node.get("type") == "Workflow":
+                workflows.append({
+                    "id": node.get("id"),
+                    "name": node.get("name", node.get("id")),
+                    "label": node.get("label"),
+                    "description": node.get("description", ""),
+                    "inputs": node.get("inputs", {}),
+                    "steps": node.get("steps", {}),
+                    "outputs": node.get("outputs", {}),
+                    "timeout": node.get("timeout"),
+                    "source": "model",
+                })
+        return workflows
+    except Exception:
+        return []
+
+
+def get_workflow_by_name(name: str) -> dict | None:
+    """Get a workflow by name. Checks model first, then files.
+
+    Model-first: the BAM model is the source of truth.
+    File-based workflows are a compatibility fallback.
+    """
+    # First: check the model (source of truth)
+    for wf in get_workflows_from_model():
+        if wf["name"] == name or wf["id"] == name:
+            return wf
+
+    # Fallback: check physical files
+    library_dir = get_workflows_library_dir()
+    file_path = library_dir / f"{name}.json"
+    if file_path.exists():
+        try:
+            with open(file_path, "r") as f:
+                data = json.load(f)
+            return {
+                "name": name,
+                "label": data.get("name", name),
+                "description": data.get("description", ""),
+                "inputs": data.get("inputs", {}),
+                "steps": data.get("steps", {}),
+                "outputs": data.get("outputs", {}),
+                "timeout": data.get("timeout"),
+                "source": "file",
+                "path": str(file_path),
+            }
+        except Exception:
+            pass
+
+    return None
+
+
 def cmd_workflows(args: argparse.Namespace) -> int:
-    """Manage the workflows library."""
+    """Manage workflows. Model-first: reads from BAM model, files as fallback."""
     library_dir = get_workflows_library_dir()
 
     if args.action == "list":
-        if not library_dir.exists():
-            print("Workflows library not found.")
-            print(f"Create it at: {library_dir}")
-            return 0
+        # Get workflows from model (primary source)
+        model_workflows = get_workflows_from_model()
 
-        workflows = list(library_dir.glob("*.json"))
-        if not workflows:
-            print("No workflows in library.")
-            print(f"Add JSON workflow files to: {library_dir}")
+        # Get workflows from files (fallback)
+        file_workflows = []
+        if library_dir.exists():
+            for wf_path in library_dir.glob("*.json"):
+                # Skip if already in model
+                name = wf_path.stem
+                if any(w["name"] == name for w in model_workflows):
+                    continue
+                try:
+                    with open(wf_path, "r") as f:
+                        data = json.load(f)
+                    file_workflows.append({
+                        "name": name,
+                        "label": data.get("name", name),
+                        "description": data.get("description", ""),
+                        "steps": data.get("steps", {}),
+                        "source": "file",
+                        "path": str(wf_path),
+                    })
+                except Exception as e:
+                    file_workflows.append({
+                        "name": name,
+                        "source": "file",
+                        "path": str(wf_path),
+                        "error": str(e),
+                    })
+
+        all_workflows = model_workflows + file_workflows
+
+        if not all_workflows:
+            print("No workflows found.")
+            print()
+            print("Workflows should be defined as nodes in the BAM model.")
+            print(f"Model path: {get_model_path()}")
+            print()
+            print("File-based fallback (deprecated):")
+            print(f"  {library_dir}")
             return 0
 
         if args.json_output:
             workflow_data = []
-            for wf_path in sorted(workflows):
-                try:
-                    with open(wf_path, "r") as f:
-                        data = json.load(f)
-                    workflow_data.append({
-                        "name": wf_path.stem,
-                        "path": str(wf_path),
-                        "description": data.get("description", ""),
-                        "steps": list(data.get("steps", {}).keys()),
-                    })
-                except Exception as e:
-                    workflow_data.append({
-                        "name": wf_path.stem,
-                        "path": str(wf_path),
-                        "error": str(e),
-                    })
+            for wf in sorted(all_workflows, key=lambda w: w["name"]):
+                workflow_data.append({
+                    "name": wf["name"],
+                    "description": wf.get("description", ""),
+                    "steps": list(wf.get("steps", {}).keys()),
+                    "source": wf.get("source", "unknown"),
+                })
             print(json.dumps(workflow_data, indent=2))
         else:
-            print(f"Workflows Library: {library_dir}")
+            print("Workflows (model-first architecture)")
+            print("=" * 40)
             print()
-            for wf_path in sorted(workflows):
-                try:
-                    with open(wf_path, "r") as f:
-                        data = json.load(f)
-                    name = wf_path.stem
-                    desc = data.get("description", "No description")
-                    steps = list(data.get("steps", {}).keys())
-                    print(f"  {name}")
-                    print(f"     {desc}")
+
+            if model_workflows:
+                print(f"From Model: {get_model_path()}")
+                print()
+                for wf in sorted(model_workflows, key=lambda w: w["name"]):
+                    print(f"  {wf['name']}")
+                    print(f"     {wf.get('description', 'No description')}")
+                    steps = list(wf.get("steps", {}).keys())
                     print(f"     Steps: {', '.join(steps)}")
                     print()
-                except Exception as e:
-                    print(f"  {wf_path.stem} (error: {e})")
+
+            if file_workflows:
+                print(f"From Files (fallback): {library_dir}")
+                print()
+                for wf in sorted(file_workflows, key=lambda w: w["name"]):
+                    if "error" in wf:
+                        print(f"  {wf['name']} (error: {wf['error']})")
+                    else:
+                        print(f"  {wf['name']}")
+                        print(f"     {wf.get('description', 'No description')}")
+                        steps = list(wf.get("steps", {}).keys())
+                        print(f"     Steps: {', '.join(steps)}")
                     print()
+
         return 0
 
     elif args.action == "run":
@@ -983,18 +1097,26 @@ def cmd_workflows(args: argparse.Namespace) -> int:
             print("Usage: spawnie workflows run <name>")
             return 1
 
-        # Find workflow file
-        workflow_path = library_dir / f"{args.name}.json"
-        if not workflow_path.exists():
-            # Try exact path as fallback
-            workflow_path = Path(args.name)
-            if not workflow_path.exists():
+        # Get workflow (model first, then files)
+        workflow = get_workflow_by_name(args.name)
+
+        if not workflow:
+            # Try exact path as last resort
+            if Path(args.name).exists():
+                workflow = {
+                    "name": Path(args.name).stem,
+                    "source": "file",
+                    "path": args.name,
+                }
+            else:
                 print(f"Workflow not found: {args.name}")
                 print()
                 print("Available workflows:")
+                for wf in get_workflows_from_model():
+                    print(f"  {wf['name']} (model)")
                 if library_dir.exists():
-                    for wf in library_dir.glob("*.json"):
-                        print(f"  {wf.stem}")
+                    for wf_path in library_dir.glob("*.json"):
+                        print(f"  {wf_path.stem} (file)")
                 return 1
 
         # Parse inputs
@@ -1011,17 +1133,43 @@ def cmd_workflows(args: argparse.Namespace) -> int:
         if args.inputs_json:
             inputs.update(json.loads(args.inputs_json))
 
-        print(f"Running workflow: {workflow_path.stem}")
-        print(f"From: {workflow_path}")
+        print(f"Running workflow: {workflow['name']}")
+        print(f"Source: {workflow.get('source', 'unknown')}")
+        if workflow.get("path"):
+            print(f"Path: {workflow['path']}")
         print(f"Inputs: {inputs}")
         print()
 
-        result = execute(
-            workflow_path,
-            inputs=inputs,
-            customer=args.customer,
-            timeout=args.timeout,
-        )
+        # Execute - either from model data or file path
+        if workflow.get("source") == "model":
+            # Create temp file from model data (until execute() supports dict)
+            import tempfile
+            workflow_data = {
+                "name": workflow.get("label", workflow["name"]),
+                "description": workflow.get("description", ""),
+                "inputs": workflow.get("inputs", {}),
+                "steps": workflow.get("steps", {}),
+                "outputs": workflow.get("outputs", {}),
+                "timeout": workflow.get("timeout"),
+            }
+            with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+                json.dump(workflow_data, f, indent=2)
+                temp_path = f.name
+
+            result = execute(
+                temp_path,
+                inputs=inputs,
+                customer=args.customer,
+                timeout=args.timeout,
+            )
+            Path(temp_path).unlink()  # Cleanup
+        else:
+            result = execute(
+                workflow.get("path", args.name),
+                inputs=inputs,
+                customer=args.customer,
+                timeout=args.timeout,
+            )
 
         if args.json_output:
             print(json.dumps(result.to_dict(), indent=2, default=str))
@@ -1055,14 +1203,24 @@ def cmd_workflows(args: argparse.Namespace) -> int:
             print("Usage: spawnie workflows show <name>")
             return 1
 
-        workflow_path = library_dir / f"{args.name}.json"
-        if not workflow_path.exists():
+        workflow = get_workflow_by_name(args.name)
+        if not workflow:
             print(f"Workflow not found: {args.name}")
             return 1
 
-        with open(workflow_path, "r") as f:
-            data = json.load(f)
-        print(json.dumps(data, indent=2))
+        # Build display data
+        display_data = {
+            "name": workflow.get("label", workflow["name"]),
+            "description": workflow.get("description", ""),
+            "source": workflow.get("source", "unknown"),
+            "inputs": workflow.get("inputs", {}),
+            "steps": workflow.get("steps", {}),
+            "outputs": workflow.get("outputs", {}),
+        }
+        if workflow.get("timeout"):
+            display_data["timeout"] = workflow["timeout"]
+
+        print(json.dumps(display_data, indent=2))
         return 0
 
     else:

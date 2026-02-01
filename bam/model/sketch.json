@@ -42,6 +42,10 @@
     "Status": {
       "description": "State of the model or a part of it",
       "properties": ["coverage", "health", "last_verified"]
+    },
+    "Workflow": {
+      "description": "Executable multi-step workflow definition - the model is the source of truth, physical files are projections",
+      "properties": ["name", "description", "inputs", "steps", "outputs", "timeout"]
     }
   },
 
@@ -90,6 +94,11 @@
       "description": "A todo is blocked by another",
       "from_types": ["Todo"],
       "to_types": ["Todo"]
+    },
+    "USES_MODEL": {
+      "description": "Workflow uses a model for execution",
+      "from_types": ["Workflow"],
+      "to_types": ["Concept"]
     }
   },
 
@@ -548,7 +557,171 @@
     {"id": "concept-model-routing", "type": "Concept", "label": "Model Routing"},
     {"id": "concept-parallel-exec", "type": "Concept", "label": "Parallel Step Execution"},
     {"id": "concept-orphan-detection", "type": "Concept", "label": "Orphan Detection"},
-    {"id": "concept-quality-levels", "type": "Concept", "label": "Quality Levels (Review Strategies)"}
+    {"id": "concept-quality-levels", "type": "Concept", "label": "Quality Levels (Review Strategies)"},
+    {"id": "concept-model-first", "type": "Concept", "label": "Model-First Architecture", "description": "The model is the working vehicle, not files. Workflows, configs, and definitions are nodes in the model. Physical files are optional projections."},
+
+    {
+      "id": "workflow-code-quality",
+      "type": "Workflow",
+      "label": "Code Quality Check",
+      "name": "code-quality-check",
+      "description": "Comprehensive code quality analysis with structured, actionable findings - aligned with seed/BAM architecture",
+      "inputs": {},
+      "steps": {
+        "analyze_structure": {
+          "prompt": "FIRST: Read C:\\seed\\NOTES.md to understand the architectural vision.\n\nAnalyze codebase structure. Look for: file organization issues, import patterns, circular dependencies, code duplication, dead code, BAM alignment.\n\nSOURCE VERIFICATION: Read actual files before claims. Set confidence='speculative' if unverified.\n\nReturn JSON array of findings with: id, title, description, category, severity, confidence, evidence (files_checked, code_refs), suggested_fixes, verified, tags.",
+          "model": "claude-sonnet",
+          "timeout": 420
+        },
+        "check_consistency": {
+          "prompt": "FIRST: Read C:\\seed\\NOTES.md.\n\nReview for consistency: naming conventions, error handling patterns, logging, type annotations, code style, BAM alignment.\n\nReturn JSON array of findings showing conflicting patterns with actual code examples.",
+          "model": "claude-sonnet",
+          "timeout": 420
+        },
+        "find_improvements": {
+          "prompt": "FIRST: Read C:\\seed\\NOTES.md.\n\nIdentify improvements: performance, abstractions, error handling, security, testability, BAM alignment.\n\nReturn JSON array of findings with verified evidence and suggested fixes.",
+          "model": "claude-sonnet",
+          "timeout": 420
+        },
+        "run_tests": {
+          "prompt": "Find and run the test suite. Return JSON with: test_framework, config_files, execution results, failures with tracebacks, coverage if available.",
+          "model": "claude-sonnet",
+          "timeout": 600
+        },
+        "verify_documentation": {
+          "prompt": "FIRST: Read C:\\seed\\NOTES.md.\n\nVerify documentation accuracy: check README claims against code, find undocumented features, check BAM model mention.\n\nReturn JSON array of doc/code mismatches.",
+          "model": "claude-sonnet",
+          "timeout": 420
+        },
+        "agent_usage_feedback": {
+          "prompt": "FIRST: Read C:\\seed\\NOTES.md.\n\nAs an AI agent, evaluate Spawnie's API usability, BAM integration, pain points, and improvement suggestions.\n\nReturn JSON with ratings, pain_points, working_well, bam_alignment, feature_requests.",
+          "model": "claude-sonnet",
+          "timeout": 420
+        },
+        "verify_findings": {
+          "prompt": "Senior reviewer: verify all findings from previous steps by reading actual source files. Reject unverifiable claims.\n\nInputs: {{steps.analyze_structure.output}}, {{steps.check_consistency.output}}, {{steps.find_improvements.output}}, {{steps.run_tests.output}}, {{steps.verify_documentation.output}}, {{steps.agent_usage_feedback.output}}\n\nReturn JSON with: verified_findings, rejected_findings, new_findings.",
+          "model": "claude-sonnet",
+          "depends": ["analyze_structure", "check_consistency", "find_improvements", "run_tests", "verify_documentation", "agent_usage_feedback"],
+          "timeout": 600
+        },
+        "synthesize_report": {
+          "prompt": "Create final structured report from all findings with BAM alignment assessment.\n\nInputs: all previous steps + {{steps.verify_findings.output}}\n\nReturn JSON with: summary (scores, counts), bam_alignment_summary, critical/high/medium/low issues, action_plan, test_summary.",
+          "model": "claude-sonnet",
+          "depends": ["verify_findings"],
+          "timeout": 480
+        }
+      },
+      "outputs": {
+        "final_report": "{{steps.synthesize_report.output}}"
+      },
+      "timeout": 2700
+    },
+
+    {
+      "id": "workflow-reality-check",
+      "type": "Workflow",
+      "label": "Reality Check",
+      "name": "reality-check",
+      "description": "Validates that reality (artifacts) matches the model. Triggered by scheduler or integration requests. Aligned with seed/BAM architecture.",
+      "inputs": {
+        "target": "string",
+        "trigger": "string"
+      },
+      "steps": {
+        "load_context": {
+          "prompt": "FIRST: Read C:\\seed\\NOTES.md.\n\nPerform REALITY CHECK - validate artifacts match model.\n\nTrigger: {{inputs.trigger}}, Target: {{inputs.target}}\n\n1. Read bam/model/sketch.json\n2. Categorize nodes: reality (has hash), aspiration (no hash), meta\n\nReturn JSON with: model_path, total_nodes, node_categories, nodes list, edges list.",
+          "model": "claude-sonnet",
+          "timeout": 180
+        },
+        "verify_reality_nodes": {
+          "prompt": "Verify REALITY NODES from {{steps.load_context.output}}.\n\nFor each node with source.hash: check file exists, compute hash, compare.\n- Match = VERIFIED\n- Differ = STALE\n- Missing = ORPHANED\n\nAlso find UNTRACKED files in src/, tests/, bam/.\n\nReturn JSON with: verified_nodes, stale_nodes, orphaned_nodes, untracked_files, summary.",
+          "model": "claude-sonnet",
+          "depends": ["load_context"],
+          "timeout": 300
+        },
+        "verify_aspiration_nodes": {
+          "prompt": "Verify ASPIRATION NODES from {{steps.load_context.output}}.\n\nFor each aspiration: check if implementation exists, determine status (not_started, in_progress, completed, blocked).\n\nReturn JSON with: aspiration_status, ready_to_promote, blocked_aspirations, summary.",
+          "model": "claude-sonnet",
+          "depends": ["load_context"],
+          "timeout": 300
+        },
+        "check_system_health": {
+          "prompt": "Check SYSTEM HEALTH:\n1. Tracker state (~/.spawnie/tracker.json)\n2. Session state (~/.spawnie/sessions/)\n3. Provider availability (Claude CLI, Copilot CLI)\n4. Config validation\n5. Disk usage\n\nReturn JSON with: overall_health, checks (tracker, sessions, providers, config, disk), recommended_actions.",
+          "model": "claude-sonnet",
+          "timeout": 180
+        },
+        "check_model_integrity": {
+          "prompt": "Check MODEL INTEGRITY from {{steps.load_context.output}}:\n1. Node integrity (required fields, no duplicates)\n2. Edge integrity (valid references)\n3. Hierarchy (no cycles, orphans)\n4. Schema compliance\n\nReturn JSON with: integrity_status, node_issues, edge_issues, hierarchy_issues, orphan_nodes, summary.",
+          "model": "claude-sonnet",
+          "depends": ["load_context"],
+          "timeout": 180
+        },
+        "synthesize_reality_report": {
+          "prompt": "Create REALITY CHECK REPORT from all verification results.\n\nInputs: {{steps.load_context.output}}, {{steps.verify_reality_nodes.output}}, {{steps.verify_aspiration_nodes.output}}, {{steps.check_system_health.output}}, {{steps.check_model_integrity.output}}\n\nReturn JSON with: reality_check (status), model_reality_alignment (score), aspiration_progress, system_health, model_integrity, drift_summary, action_plan, next_check.",
+          "model": "claude-sonnet",
+          "depends": ["verify_reality_nodes", "verify_aspiration_nodes", "check_system_health", "check_model_integrity"],
+          "timeout": 300
+        }
+      },
+      "outputs": {
+        "reality_report": "{{steps.synthesize_reality_report.output}}"
+      },
+      "timeout": 1200
+    },
+
+    {
+      "id": "workflow-binary-search",
+      "type": "Workflow",
+      "label": "Binary Search Analysis",
+      "name": "binary-search-analysis",
+      "description": "Example workflow: analyze binary search algorithm",
+      "inputs": {},
+      "steps": {
+        "step1_analyze": {
+          "prompt": "Write a detailed 200-word explanation of how binary search works. Include an example.",
+          "model": "claude-haiku",
+          "timeout": 120
+        },
+        "step2_summarize": {
+          "prompt": "Summarize in exactly 3 bullet points:\n\n{{steps.step1_analyze.output}}",
+          "model": "claude-haiku",
+          "depends": ["step1_analyze"],
+          "timeout": 120
+        }
+      },
+      "outputs": {
+        "analysis": "{{steps.step1_analyze.output}}",
+        "summary": "{{steps.step2_summarize.output}}"
+      },
+      "timeout": 300
+    },
+
+    {
+      "id": "workflow-merge-sort",
+      "type": "Workflow",
+      "label": "Merge Sort Analysis",
+      "name": "merge-sort-analysis",
+      "description": "Example workflow: analyze merge sort algorithm",
+      "inputs": {},
+      "steps": {
+        "step1_research": {
+          "prompt": "Write a detailed 200-word explanation of how merge sort works. Include an example.",
+          "model": "claude-haiku",
+          "timeout": 120
+        },
+        "step2_compare": {
+          "prompt": "List 3 pros and 3 cons of merge sort:\n\n{{steps.step1_research.output}}",
+          "model": "claude-haiku",
+          "depends": ["step1_research"],
+          "timeout": 120
+        }
+      },
+      "outputs": {
+        "research": "{{steps.step1_research.output}}",
+        "comparison": "{{steps.step2_compare.output}}"
+      },
+      "timeout": 300
+    }
   ],
 
   "edges": [
@@ -625,6 +798,12 @@
 
     {"type": "BLOCKED_BY", "from": "todo-complete-edges", "to": "todo-add-missing-modules"},
     {"type": "BLOCKED_BY", "from": "todo-complete-edges", "to": "todo-complete-classes"},
-    {"type": "BLOCKED_BY", "from": "todo-update-colors", "to": "todo-add-missing-modules"}
+    {"type": "BLOCKED_BY", "from": "todo-update-colors", "to": "todo-add-missing-modules"},
+
+    {"type": "USES_MODEL", "from": "workflow-code-quality", "to": "concept-model-first"},
+    {"type": "USES_MODEL", "from": "workflow-reality-check", "to": "concept-model-first"},
+    {"type": "USES_MODEL", "from": "workflow-binary-search", "to": "concept-model-first"},
+    {"type": "USES_MODEL", "from": "workflow-merge-sort", "to": "concept-model-first"},
+    {"type": "EMBODIES", "from": "workflow-reality-check", "to": "concept-orphan-detection"}
   ]
 }

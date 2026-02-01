@@ -486,22 +486,53 @@ spawnie detect claude         # Check Claude CLI availability
 spawnie detect copilot        # Check Copilot CLI availability
 ```
 
-## Workflows Library
+## Workflows Library (Model-First)
 
-Store reusable workflows in `~/.spawnie/workflows/`:
+**Model-first architecture**: Workflows are defined as nodes in the BAM model (`bam/model/sketch.json`), not as physical files. Physical files in `~/.spawnie/workflows/` are a compatibility fallback.
 
 ```bash
-# List available workflows
+# List available workflows (reads from model first)
 spawnie workflows list
 
 # Show workflow definition
 spawnie workflows show my-workflow
 
-# Run a workflow from the library
+# Run a workflow
 spawnie workflows run my-workflow -i param=value
 ```
 
-Workflows are JSON files. See the `Workflow JSON Format` section above for the schema.
+### Defining Workflows in the Model
+
+Add workflow nodes to `bam/model/sketch.json`:
+
+```json
+{
+  "id": "workflow-my-task",
+  "type": "Workflow",
+  "label": "My Task Workflow",
+  "name": "my-task",
+  "description": "What this workflow does",
+  "inputs": {"param": "string"},
+  "steps": {
+    "step1": {
+      "prompt": "Do something with {{inputs.param}}",
+      "model": "claude-haiku",
+      "timeout": 120
+    }
+  },
+  "outputs": {"result": "{{steps.step1.output}}"},
+  "timeout": 300
+}
+```
+
+### Why Model-First?
+
+The model is the source of truth. Physical files are optional projections.
+
+- **Single source**: No sync issues between model and files
+- **Introspectable**: Agents can query all workflows by reading the model
+- **Composable**: Workflows can reference other model nodes
+- **Verifiable**: Hash verification applies to workflow definitions
 
 ## Quality Levels
 
@@ -527,14 +558,21 @@ spawnie run "prompt" -m claude-sonnet -q hypertask
 ## File Structure
 
 ```
+project/
+└── bam/
+    └── model/
+        └── sketch.json   # BAM model - source of truth for workflows
+
 ~/.spawnie/
 ├── config.json       # Model registry and provider config
 ├── tracker.json      # Real-time state (workflows, tasks, alerts)
-├── workflows/        # Reusable workflow library
+├── workflows/        # Fallback workflow files (deprecated - use model)
 │   └── my-workflow.json
 └── history/          # Archived completed workflows
     └── 2024-01-15.jsonl
 ```
+
+The BAM model (`bam/model/sketch.json`) is the primary source for workflow definitions. Spawnie reads workflows from the model first, falling back to `~/.spawnie/workflows/` for compatibility.
 
 ## License
 
