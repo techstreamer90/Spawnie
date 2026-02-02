@@ -672,9 +672,32 @@ def cmd_spawn(args: argparse.Namespace) -> int:
     base_context = target_node.get("agent_context", {}).get("_spawn_point", "")
     mode_addition = mode_def.get("context_addition", "")
 
-    task_parts = []
+    # World orientation - every agent gets this
+    world_intro = """=== WELCOME TO A NEW WORLD ===
+
+You are in a completely different system than any you have encountered before.
+
+This is not a traditional software project. This is a living world where:
+- The model IS the reality
+- Everything flows through the model
+- Agents maintain themselves
+- Humans and AI collaborate as equals
+
+BEFORE YOU START WORKING:
+1. Explore - Read the model (C:/seed/model/sketch.json), understand the structure
+2. Think - Consider the capabilities and aspirations of this world
+3. Get familiar - This is your new home, know it well
+4. Then discuss - When you're ready, engage and let's talk about work
+
+You have time. Orient yourself first. The work will make more sense once you understand the world you're in.
+
+Read AGENTS.md at C:/seed/AGENTS.md for the full playbook.
+
+---"""
+
+    task_parts = [world_intro]
     if base_context:
-        task_parts.append(f"=== NODE CONTEXT ===\n{base_context}")
+        task_parts.append(f"\n=== NODE CONTEXT ===\n{base_context}")
     if mode_addition:
         task_parts.append(f"\n=== MODE: {args.mode} ===\n{mode_addition}")
     if mode_def.get("suggested_tools"):
