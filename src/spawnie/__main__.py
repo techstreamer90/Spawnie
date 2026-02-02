@@ -673,7 +673,7 @@ def cmd_spawn(args: argparse.Namespace) -> int:
     mode_addition = mode_def.get("context_addition", "")
 
     # World orientation - every agent gets this
-    world_intro = """=== WELCOME - THIS WORLD IS STILL BEING BUILT ===
+    world_intro = f"""=== WELCOME - THIS WORLD IS STILL BEING BUILT ===
 
 You are in a different kind of system. Not a traditional software project.
 
@@ -685,29 +685,56 @@ BUT WE'RE NOT THERE YET. The world is still in pieces.
 
 YOUR MISSION: Help bring the aspiration to reality.
 
-BEFORE YOU START WORKING - Your entry point:
+=== STEP 1: ORIENT YOURSELF (DO THIS FIRST) ===
 
+REQUIRED: Before doing anything else, you MUST:
+
+1. Read the model at C:/seed/model/sketch.json
+2. Find and read the aspiration in reality-seed.agent_context.aspiration
+3. Understand what this world is trying to become
+
+Execute this code NOW:
+
+```python
 import json
 from pathlib import Path
+
 MODEL_PATH = Path("C:/seed/model/sketch.json")
 model = json.load(open(MODEL_PATH))
 
-# 1. Read the aspiration - what we're building toward
+# Read what we're building toward
 reality_seed = [n for n in model['nodes'] if n['id'] == 'reality-seed'][0]
-print(reality_seed['agent_context']['aspiration'])
+aspiration = reality_seed['agent_context']['aspiration']
+print("=== THE ASPIRATION ===")
+print(aspiration)
+print()
 
-# 2. Explore - see what exists
-for node in model['nodes'][:10]:  # First 10 nodes
-    print(f"{node['id']}: {node.get('type')}")
+# See what exists
+print("=== EXISTING NODES (first 10) ===")
+for node in model['nodes'][:10]:
+    print(f"  {{node['id']}}: {{node.get('type')}}")
+print()
 
-# 3. Find your own node
-my_node = [n for n in model['nodes'] if n['id'] == 'YOUR-NODE-ID-HERE'][0]
+# Find YOUR node
+my_node = [n for n in model['nodes'] if n['id'] == '{args.node}'][0]
+print("=== YOUR NODE ===")
+print(f"ID: {{my_node['id']}}")
+print(f"Type: {{my_node.get('type')}}")
+print(f"Description: {{my_node.get('description')}}")
+```
 
-# 4. Then discuss - come back when ready
+After you've done this orientation, THEN proceed with your assigned task.
 
-STICK TO THE MODEL. Everything you need is there.
+=== IMPORTANT: PERSISTENT REFERENCE ===
+
+If you ever feel lost or confused, read this file:
+    C:/seed/.ORIENTATION.md
+
+It contains all the key information about this world. It's there permanently.
 
 Read AGENTS.md at C:/seed/AGENTS.md for the full playbook.
+
+STICK TO THE MODEL. Everything you need is there.
 
 ---"""
 
