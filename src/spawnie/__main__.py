@@ -621,6 +621,101 @@ echo.
     return 0
 
 
+def cmd_spawn(args: argparse.Namespace) -> int:
+    """Spawn an agent for a specific node with a mode (model-driven spawning)."""
+    import json
+    from pathlib import Path
+
+    # Read model to get node and mode information
+    model_path = Path(args.model_path) if args.model_path else Path("C:/seed/model/sketch.json")
+
+    if not model_path.exists():
+        print(f"Error: Model not found: {model_path}", file=sys.stderr)
+        print("Specify model path with --model-path", file=sys.stderr)
+        return 1
+
+    try:
+        with open(model_path, encoding="utf-8") as f:
+            model = json.load(f)
+    except Exception as e:
+        print(f"Error reading model: {e}", file=sys.stderr)
+        return 1
+
+    # Find the target node
+    target_node = None
+    for node in model.get("nodes", []):
+        if node.get("id") == args.node:
+            target_node = node
+            break
+
+    if not target_node:
+        print(f"Error: Node not found: {args.node}", file=sys.stderr)
+        print(f"Available nodes in {model_path}:", file=sys.stderr)
+        for node in model.get("nodes", [])[:10]:
+            print(f"  - {node.get('id')}", file=sys.stderr)
+        return 1
+
+    # Get mode definition
+    modes = target_node.get("modes", {})
+    if args.mode not in modes:
+        print(f"Error: Mode '{args.mode}' not found in node '{args.node}'", file=sys.stderr)
+        available_modes = list(modes.keys())
+        if available_modes:
+            print(f"Available modes: {', '.join(available_modes)}", file=sys.stderr)
+        else:
+            print(f"Node has no modes defined.", file=sys.stderr)
+        return 1
+
+    mode_def = modes[args.mode]
+
+    # Build complete task description
+    base_context = target_node.get("agent_context", {}).get("_spawn_point", "")
+    mode_addition = mode_def.get("context_addition", "")
+
+    task_parts = []
+    if base_context:
+        task_parts.append(f"=== NODE CONTEXT ===\n{base_context}")
+    if mode_addition:
+        task_parts.append(f"\n=== MODE: {args.mode} ===\n{mode_addition}")
+    if mode_def.get("suggested_tools"):
+        tools_str = ", ".join(mode_def["suggested_tools"])
+        task_parts.append(f"\nSuggested tools: {tools_str}")
+    if mode_def.get("output_location"):
+        task_parts.append(f"Output location: {mode_def['output_location']}")
+    if args.additional:
+        task_parts.append(f"\n=== ADDITIONAL CONTEXT ===\n{args.additional}")
+
+    full_task = "\n".join(task_parts)
+
+    # Determine working directory
+    working_dir = args.working_dir
+    if not working_dir and target_node.get("source", {}).get("path"):
+        working_dir = str(Path(target_node["source"]["path"]).parent)
+
+    # Create args object for shell command
+    shell_args = argparse.Namespace(
+        task=full_task,
+        model=args.model,
+        provider=args.provider,
+        working_dir=working_dir,
+        timeout=args.timeout,
+        interactive=args.interactive,
+        background=args.background,
+        new_window=args.new_window,
+        json=args.json,
+        skip_permissions=args.skip_permissions,
+    )
+
+    # Delegate to shell command
+    if not args.quiet:
+        print(f"Spawning agent for node: {args.node}")
+        print(f"Mode: {args.mode} - {mode_def.get('description', 'No description')}")
+        print(f"Working directory: {working_dir or 'current'}")
+        print()
+
+    return cmd_shell(shell_args)
+
+
 def cmd_shell(args: argparse.Namespace) -> int:
     """Start an interactive shell session."""
 
@@ -630,6 +725,7 @@ def cmd_shell(args: argparse.Namespace) -> int:
 
     session = ShellSession(
         working_dir=Path(args.working_dir) if args.working_dir else None,
+        skip_permissions=args.skip_permissions,
     )
 
     session.start(
@@ -1332,6 +1428,23 @@ def main() -> int:
     # Shell Session Commands
     # ==========================================================================
 
+    # spawn command - model-driven spawning with node + mode
+    spawn_parser = subparsers.add_parser("spawn", help="Spawn agent for a node with a specific mode (model-driven)")
+    spawn_parser.add_argument("--node", required=True, help="Node ID to spawn agent for")
+    spawn_parser.add_argument("--mode", required=True, help="Mode (work-on-views, chat, aspiration, maintenance, debug, implement)")
+    spawn_parser.add_argument("additional", nargs="?", help="Additional context (optional)")
+    spawn_parser.add_argument("-m", "--model", default="claude-sonnet", help="Model to use")
+    spawn_parser.add_argument("--provider", choices=["claude", "copilot"], help="Force specific provider")
+    spawn_parser.add_argument("-d", "--working-dir", help="Working directory (defaults to node source path)")
+    spawn_parser.add_argument("--model-path", help="Path to model file (defaults to C:/seed/model/sketch.json)")
+    spawn_parser.add_argument("--timeout", type=int, default=3600, help="Session timeout in seconds")
+    spawn_parser.add_argument("-i", "--interactive", action="store_true", help="Interactive mode")
+    spawn_parser.add_argument("-b", "--background", action="store_true", help="Start in background")
+    spawn_parser.add_argument("-n", "--new-window", action="store_true", help="Spawn in new terminal window")
+    spawn_parser.add_argument("--json", action="store_true", help="Output as JSON")
+    spawn_parser.add_argument("--quiet", "-q", action="store_true", help="Suppress info output")
+    spawn_parser.add_argument("--skip-permissions", action="store_true", help="Skip permission checks")
+
     # shell command - start interactive session
     shell_parser = subparsers.add_parser("shell", help="Start an interactive shell session")
     shell_parser.add_argument("task", help="The task/playbook for the agent")
@@ -1343,6 +1456,7 @@ def main() -> int:
     shell_parser.add_argument("-b", "--background", action="store_true", help="Start in background, return session ID immediately")
     shell_parser.add_argument("-n", "--new-window", action="store_true", help="Spawn in a new terminal window for direct interaction")
     shell_parser.add_argument("--json", action="store_true", help="Output as JSON (for --background)")
+    shell_parser.add_argument("--skip-permissions", action="store_true", help="DANGEROUS: Skip permission checks for autonomous operation. Use only when you fully trust the agent and task.")
 
     # session-events command - get events from a session
     session_events_parser = subparsers.add_parser("session-events", help="Get events from a session")
@@ -1424,6 +1538,7 @@ def main() -> int:
         "submit": cmd_submit,
         "task-status": cmd_task_status,
         # Shell session commands
+        "spawn": cmd_spawn,
         "shell": cmd_shell,
         "sessions": cmd_sessions,
         "session-kill": cmd_session_kill,
