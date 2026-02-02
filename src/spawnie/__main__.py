@@ -685,13 +685,27 @@ BUT WE'RE NOT THERE YET. The world is still in pieces.
 
 YOUR MISSION: Help bring the aspiration to reality.
 
-BEFORE YOU START WORKING:
-1. Read the aspiration - See reality-seed.agent_context.aspiration in C:/seed/model/sketch.json
-2. Explore - Understand what exists and what's missing
-3. Think - Consider the gap between aspiration and reality
-4. Then discuss - When ready, come back and let's build this together
+BEFORE YOU START WORKING - Your entry point:
 
-You have time. Orient yourself first. Understand what we're building toward, then help us get there.
+import json
+from pathlib import Path
+MODEL_PATH = Path("C:/seed/model/sketch.json")
+model = json.load(open(MODEL_PATH))
+
+# 1. Read the aspiration - what we're building toward
+reality_seed = [n for n in model['nodes'] if n['id'] == 'reality-seed'][0]
+print(reality_seed['agent_context']['aspiration'])
+
+# 2. Explore - see what exists
+for node in model['nodes'][:10]:  # First 10 nodes
+    print(f"{node['id']}: {node.get('type')}")
+
+# 3. Find your own node
+my_node = [n for n in model['nodes'] if n['id'] == 'YOUR-NODE-ID-HERE'][0]
+
+# 4. Then discuss - come back when ready
+
+STICK TO THE MODEL. Everything you need is there.
 
 Read AGENTS.md at C:/seed/AGENTS.md for the full playbook.
 
